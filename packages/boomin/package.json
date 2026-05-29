@@ -1,0 +1,53 @@
+{
+  "name": "boominjs",
+  "version": "0.3.5",
+  "description": "Compatibility wrapper for the scoped Boomin packages.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Boomin-Ai/sdk.git",
+    "directory": "packages/boomin"
+  },
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "bin": {
+    "boominjs": "src/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js",
+      "default": "./src/index.js"
+    },
+    "./server": {
+      "types": "./src/server.d.ts",
+      "import": "./src/server.js",
+      "default": "./src/server.js"
+    },
+    "./server/next": {
+      "types": "./src/server/next.d.ts",
+      "import": "./src/server/next.js",
+      "default": "./src/server/next.js"
+    },
+    "./connect.js": "./dist/boomin-connect.js"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node --check src/index.js && node --check src/server.js && node --check src/server/next.js && node --check src/cli.js",
+    "pack:dry": "npm pack --dry-run"
+  },
+  "dependencies": {
+    "@boomin/cli": "file:../cli",
+    "@boomin/connect": "file:../connect",
+    "@boomin/server": "file:../server"
+  },
+  "keywords": [
+    "boomin",
+    "boominjs"
+  ],
+  "author": "Boomin",
+  "license": "UNLICENSED"
+}

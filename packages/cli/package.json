@@ -1,0 +1,41 @@
+{
+  "name": "@boomin/cli",
+  "version": "0.1.5",
+  "description": "Boomin CLI for setup, handoff scaffolding, tokens, scopes, and smoke tests.",
+  "type": "module",
+  "bin": {
+    "boomin": "src/cli.js",
+    "boominjs": "src/cli.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Boomin-Ai/sdk.git",
+    "directory": "packages/cli"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    "./cli": {
+      "import": "./src/cli.js",
+      "default": "./src/cli.js"
+    }
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node --check src/cli.js",
+    "pack:dry": "npm pack --dry-run"
+  },
+  "keywords": [
+    "boomin",
+    "cli",
+    "partner-connect",
+    "platform-api",
+    "agents"
+  ],
+  "author": "Boomin",
+  "license": "UNLICENSED"
+}

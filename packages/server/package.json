@@ -1,0 +1,42 @@
+{
+  "name": "@boomin/server",
+  "version": "0.1.1",
+  "description": "Server helpers for Boomin signed handoff and event ingestion.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Boomin-Ai/sdk.git",
+    "directory": "packages/server"
+  },
+  "main": "./src/server.js",
+  "types": "./src/server.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/server.d.ts",
+      "import": "./src/server.js",
+      "default": "./src/server.js"
+    },
+    "./next": {
+      "types": "./src/server/next.d.ts",
+      "import": "./src/server/next.js",
+      "default": "./src/server/next.js"
+    }
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node --check src/server.js && node --check src/server/next.js",
+    "pack:dry": "npm pack --dry-run"
+  },
+  "keywords": [
+    "boomin",
+    "handoff",
+    "server",
+    "hmac",
+    "nextjs"
+  ],
+  "author": "Boomin",
+  "license": "UNLICENSED"
+}

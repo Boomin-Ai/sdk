@@ -1,0 +1,16 @@
+{
+  "name": "boomin-sdk",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/cli",
+    "packages/connect",
+    "packages/server",
+    "packages/mcp",
+    "packages/boomin"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @boomin/connect && npm run build --workspace @boomin/server && npm run build --workspace @boomin/cli && npm run build --workspace @boomin/mcp && npm run build --workspace boominjs",
+    "pack:dry": "npm pack --dry-run --workspace @boomin/connect && npm pack --dry-run --workspace @boomin/server && npm pack --dry-run --workspace @boomin/cli && npm pack --dry-run --workspace @boomin/mcp"
+  }
+}

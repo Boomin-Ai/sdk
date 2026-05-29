@@ -1,0 +1,40 @@
+{
+  "name": "@boomin/connect",
+  "version": "0.1.1",
+  "description": "Browser SDK for Boomin Partner Connect.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Boomin-Ai/sdk.git",
+    "directory": "packages/connect"
+  },
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js",
+      "default": "./src/index.js"
+    },
+    "./connect.js": "./dist/boomin-connect.js"
+  },
+  "files": [
+    "src",
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "pack:dry": "npm pack --dry-run"
+  },
+  "keywords": [
+    "boomin",
+    "partner-connect",
+    "creator",
+    "referral",
+    "instagram",
+    "oauth"
+  ],
+  "author": "Boomin",
+  "license": "UNLICENSED"
+}
