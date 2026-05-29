@@ -1,6 +1,6 @@
 {
   "name": "@boomin/cli",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Boomin CLI for setup, handoff scaffolding, tokens, scopes, and smoke tests.",
   "type": "module",
   "bin": {
