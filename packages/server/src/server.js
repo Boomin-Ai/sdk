@@ -22,7 +22,6 @@ export async function signHandoffPayload(payload, signingSecret) {
 
 export function createHandoffPayload(options) {
   if (!options?.publicKey) throw new Error("createHandoffPayload requires publicKey.");
-  if (!options?.programId) throw new Error("createHandoffPayload requires programId.");
   if (!options?.redirectUri) throw new Error("createHandoffPayload requires redirectUri.");
   if (!options?.issuer) throw new Error("createHandoffPayload requires issuer.");
   if (!options?.externalUserId) throw new Error("createHandoffPayload requires externalUserId.");
@@ -106,7 +105,6 @@ export async function postProgramEvent(options) {
 
 export function createStandingPayload(options) {
   if (!options?.publicKey) throw new Error("createStandingPayload requires publicKey.");
-  if (!options?.programId) throw new Error("createStandingPayload requires programId.");
   if (!options?.issuer) throw new Error("createStandingPayload requires issuer.");
 
   const issuedAt = Math.floor(Date.now() / 1000);

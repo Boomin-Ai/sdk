@@ -7,7 +7,7 @@ export interface BoominHandoffUser {
 
 export interface BoominHandoffOptions extends BoominHandoffUser {
   publicKey: string;
-  programId: string;
+  programId?: string;
   redirectUri: string;
   signingSecret: string;
   issuer: string;
@@ -24,7 +24,7 @@ export interface BoominHandoffPayload {
   exp: number;
   nonce: string;
   publicKey: string;
-  programId: string;
+  programId?: string;
   redirectUri: string;
   externalUserId: string;
   email: string;
@@ -50,7 +50,7 @@ export interface BoominProgramEventOptions {
 export interface BoominStandingOptions {
   apiBase?: string;
   publicKey: string;
-  programId: string;
+  programId?: string;
   issuer: string;
   audience?: string;
   signingSecret: string;
