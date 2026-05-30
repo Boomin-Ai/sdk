@@ -7,8 +7,6 @@ Public SDK package home for Boomin.
 - `@boomin/connect`: browser SDK for Partner Connect, referral-first status, channel connect, and CDN global builds.
 - `@boomin/server`: server helpers for signed handoff, event ingestion, and framework adapters.
 - `@boomin/cli`: setup, doctor, MCP install, referral scaffolding, tokens, and smoke commands.
-- `@boomin/mcp`: local stdio MCP implementation shared by hosted MCP.
-- `boominjs`: temporary compatibility wrapper. Do not market this package.
 
 ## npm Trusted Publishing
 

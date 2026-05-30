@@ -13,10 +13,10 @@ npx @boomin/cli skill install
 npx @boomin/cli platform smoke --read-only --token sk_boomin_live_...
 ```
 
-The installed binary is `boomin`. A temporary `boominjs` alias exists for transition only.
+The installed binary is `boomin`.
 
 `mcp install` creates a scoped platform token, wires Claude Code with `Authorization: Bearer ...` at user scope, and asks you to restart Claude Code so the MCP server is loaded.
 
 `skill install` installs the Boomin referral installer skill for Claude Code and Codex, then asks you to restart the agent so the skill metadata is loaded.
 
-Local stdio MCP is published separately as `@boomin/mcp`; hosted MCP setup should use `npx @boomin/cli mcp install`.
+Hosted MCP is the supported path. `mcp install` wires it into Claude Code; there is no separate local stdio package to install.

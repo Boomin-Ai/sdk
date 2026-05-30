@@ -4,8 +4,7 @@
   "description": "Boomin CLI for setup, handoff scaffolding, tokens, scopes, and smoke tests.",
   "type": "module",
   "bin": {
-    "boomin": "src/cli.js",
-    "boominjs": "src/cli.js"
+    "boomin": "src/cli.js"
   },
   "repository": {
     "type": "git",

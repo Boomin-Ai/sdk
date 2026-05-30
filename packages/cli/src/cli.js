@@ -457,11 +457,8 @@ This generates a signed handoff join route, current-user partner standing API, r
 Usage:
   npx @boomin/cli mcp install
   npx @boomin/cli mcp install --pack program_operator
-  npx @boomin/cli mcp
-  npx @boomin/cli mcp doctor --json
 
-Local stdio MCP for Codex, Claude Desktop, Cursor, and other agent clients.
-Use mcp install to wire Claude Code with a scoped static bearer token at user scope.
+Wires the hosted Boomin MCP into Claude Code with a scoped static bearer token at user scope.
 
 Environment:
   BOOMIN_PLATFORM_TOKEN       Optional sk_boomin_live_* token for scoped API tools.
@@ -1824,50 +1821,13 @@ async function skillCommand(subcommand, flags = {}) {
 
 async function mcpCommand(flags = {}) {
   const subcommand = flags._.shift();
-  const config = await loadConfig();
-  const platformToken = flags.token || process.env.BOOMIN_PLATFORM_TOKEN || config.platformToken;
-  const skillPacks = flags.packs || process.env.BOOMIN_MCP_SKILL_PACKS;
 
   if (subcommand === "install") {
     await mcpInstall(flags);
     return;
   }
 
-  const mcp = await import("../../mcp/src/protocol.js").catch(async () => {
-    throw new Error("@boomin/mcp is not installed. Use `npx @boomin/cli mcp install` for hosted MCP, or install @boomin/mcp when the local stdio package is published.");
-  });
-
-  if (subcommand === "doctor") {
-    const context = mcp.createMcpContext({
-      local: true,
-      cwd: process.cwd(),
-      env: process.env,
-      platformToken,
-      skillPacks,
-    });
-    const result = await mcp.callTool("boomin.doctor", {}, context);
-    if (flags.json) printJson(result);
-    else {
-      console.log(`Boomin MCP doctor: ${result.ok ? "ok" : "needs attention"}`);
-      console.log(`Skill packs: ${result.mcp?.skillPacks?.join(", ") || "referral_installer"}`);
-      if (result.nextSteps?.length) console.log(`Next: ${result.nextSteps.join(" ")}`);
-    }
-    return;
-  }
-
-  if (subcommand && subcommand !== "serve") {
-    printHelp(["mcp"]);
-    return;
-  }
-
-  const stdio = await import("../../mcp/src/stdio.js").catch(async () => {
-    throw new Error("@boomin/mcp local stdio server is not installed yet. Use `npx @boomin/cli mcp install` for the hosted MCP path.");
-  });
-  await stdio.startStdioServer({
-    cwd: process.cwd(),
-    platformToken,
-    skillPacks,
-  });
+  throw new Error("Local stdio MCP is not shipped. Use `npx @boomin/cli mcp install` to wire the hosted Boomin MCP (https://mcp.boomin.ai/mcp) into Claude Code.");
 }
 
 async function mcpInstall(flags = {}) {
