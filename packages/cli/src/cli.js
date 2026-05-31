@@ -20,6 +20,8 @@ const PLATFORM_SCOPES = [
   { scope: "org:read", category: "setup", description: "Read current organization context." },
   { scope: "connect_config:read", category: "setup", description: "Read Creator Connect developer setup." },
   { scope: "connect_config:write", category: "setup", description: "Update Creator Connect allowed origins and setup." },
+  { scope: "handoff:read", category: "setup", description: "Read the program handoff signing config (without the secret)." },
+  { scope: "handoff:write", category: "setup", description: "Provision or rotate the program handoff signing secret." },
   { scope: "programs:read", category: "programs", description: "Read creator programs." },
   { scope: "programs:create", category: "programs", description: "Create creator programs." },
   { scope: "programs:update", category: "programs", description: "Update creator programs." },
@@ -74,7 +76,7 @@ const PLATFORM_SCOPES = [
 const MCP_SKILL_PACKS = {
   referral_installer: {
     label: "Referral Program Installer",
-    scopes: ["org:read", "connect_config:read", "events:write"],
+    scopes: ["org:read", "connect_config:read", "handoff:write", "events:write"],
   },
   program_operator: {
     label: "Program Operator",
@@ -149,6 +151,8 @@ function parseArgs(argv) {
       "redirectRoute",
       "destinationUrl",
       "issuer",
+      "audience",
+      "signingSecret",
       "pack",
       "packs",
       "scope",
@@ -415,6 +419,48 @@ Flags:
   --write             Write the route file instead of printing it.
   --yes               Overwrite an existing generated route without prompting.
   --json              Print machine-readable output.
+`);
+    return;
+  }
+  if (first === "handoff" && (second === "provision" || second === "rotate")) {
+    console.log(`Boomin CLI - handoff provision
+
+Usage:
+  npx @boomin/cli handoff provision
+  npx @boomin/cli handoff provision --issuer your-app.com
+  npx @boomin/cli handoff provision --rotate
+
+What it does:
+  Mints (or rotates) the program's HMAC handoff signing secret and saves it to
+  .env.local as BOOMIN_HANDOFF_SIGNING_SECRET / BOOMIN_HANDOFF_ISSUER, alongside
+  BOOMIN_CONNECT_PROGRAM_ID / BOOMIN_CONNECT_PUBLIC_KEY. The secret is shown once.
+
+Flags:
+  --issuer <id>       Handoff token issuer. Defaults to your-app.com (and to any
+                      existing BOOMIN_HANDOFF_ISSUER in .env.local).
+  --audience <id>     Handoff token audience. Defaults to boomin.ai.
+  --program-id <id>   Program to provision. Defaults to the id in .env.local / config.
+  --rotate            Mint a new secret even if one already exists (invalidates the old one).
+  --dry-run           Print the secret without writing .env.local.
+  --json              Print machine-readable output.
+
+Notes:
+  Requires login (npx @boomin/cli login) as an admin of the program.
+  Run after init; then doctor's handoff_config check should pass.
+`);
+    return;
+  }
+  if (first === "handoff") {
+    console.log(`Boomin CLI - handoff commands
+
+Usage:
+  npx @boomin/cli handoff provision                 Mint the handoff signing secret and write env.
+  npx @boomin/cli handoff provision --rotate        Rotate the signing secret.
+  npx @boomin/cli handoff init --framework next     Print or write a signed-handoff route template.
+
+See also:
+  npx @boomin/cli referral init --framework next --auth custom --write
+  npx @boomin/cli doctor
 `);
     return;
   }
@@ -837,9 +883,14 @@ async function detectOrigins(flags) {
   const origins = new Set(["http://localhost:5173", "http://localhost:4173"]);
   for (const origin of flags.origins || []) origins.add(origin);
   const pkg = await readJson(path.join(process.cwd(), "package.json"), null);
-  if (pkg?.scripts && Object.values(pkg.scripts).some((script) => String(script).includes("vite"))) {
+  const scripts = pkg?.scripts ? Object.values(pkg.scripts).map(String) : [];
+  const deps = { ...(pkg?.dependencies || {}), ...(pkg?.devDependencies || {}) };
+  if (scripts.some((script) => script.includes("vite"))) {
     origins.add("http://localhost:5173");
     origins.add("http://localhost:4173");
+  }
+  if (deps.next || scripts.some((script) => /(^|[^a-z])next($|[^a-z])/.test(script))) {
+    origins.add("http://localhost:3000");
   }
   return [...origins];
 }
@@ -869,7 +920,59 @@ async function upsertEnvLocal(values, dryRun) {
   return { envPath, content: nextContent };
 }
 
-function printReactSnippet() {
+async function upsertEnvFile(updates, options = {}) {
+  const envPath = path.join(process.cwd(), ".env.local");
+  let content = "";
+  try {
+    content = await fs.readFile(envPath, "utf8");
+  } catch {
+    content = "";
+  }
+  const lines = content.length ? content.split(/\r?\n/) : [];
+  while (lines.length && lines[lines.length - 1] === "") lines.pop();
+  const keys = Object.keys(updates);
+  const seen = new Set();
+  const nextLines = lines.map((line) => {
+    const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=/);
+    if (match && keys.includes(match[1])) {
+      seen.add(match[1]);
+      return `${match[1]}=${updates[match[1]]}`;
+    }
+    return line;
+  });
+  for (const key of keys) {
+    if (!seen.has(key)) nextLines.push(`${key}=${updates[key]}`);
+  }
+  const nextContent = `${nextLines.join("\n")}\n`;
+  if (!options.dryRun) await fs.writeFile(envPath, nextContent);
+  return { envPath, content: nextContent };
+}
+
+async function detectFramework() {
+  const pkg = await readJson(path.join(process.cwd(), "package.json"), null);
+  if (!pkg) return "unknown";
+  const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+  const scripts = pkg.scripts ? Object.values(pkg.scripts).map(String) : [];
+  if (deps.next || scripts.some((script) => /(^|[^a-z])next($|[^a-z])/.test(script))) return "next";
+  if (deps.vite || scripts.some((script) => script.includes("vite"))) return "vite";
+  return "unknown";
+}
+
+function printReactSnippet(framework = "vite") {
+  if (framework === "next") {
+    console.log(`
+Next.js next steps:
+
+  npx @boomin/cli referral init --framework next --auth custom --write
+  npx @boomin/cli handoff provision
+  npx @boomin/cli doctor
+
+The scaffolded route handlers read process.env.BOOMIN_CONNECT_* and
+process.env.BOOMIN_HANDOFF_* from .env.local (written above). For a browser
+component, use NEXT_PUBLIC_BOOMIN_* values instead.
+`);
+    return;
+  }
   console.log(`
 React example:
 
@@ -1177,7 +1280,7 @@ async function doctor(flags = {}) {
   const handoffIssuer = envValue(envFile, "BOOMIN_HANDOFF_ISSUER");
   let handoffReady = false;
   if (!handoffSecret && !handoffIssuer) {
-    doctorCheck(checks, "skip", "handoff_config", "Handoff config", "No handoff env vars found; signed handoff is optional.", { fix: "npx @boomin/cli handoff init --framework next --auth custom" });
+    doctorCheck(checks, "skip", "handoff_config", "Handoff config", "No handoff env vars found; signed handoff is optional.", { fix: "npx @boomin/cli handoff provision" });
   } else if (!authToken || !programId) {
     doctorCheck(checks, "skip", "handoff_config", "Handoff config", "Skipped because login or program id is missing.", { fix: "npx @boomin/cli login" });
   } else {
@@ -1188,15 +1291,15 @@ async function doctor(flags = {}) {
       const response = await request(apiBase, route, { token: authToken });
       const handoffConfig = response.config || (Array.isArray(response.configs) ? response.configs[0] : null);
       if (!handoffConfig) {
-        doctorCheck(checks, "fail", "handoff_config", "Handoff config", "No matching handoff config was found.", { fix: "Create a handoff config in Boomin Program Settings." });
+        doctorCheck(checks, "fail", "handoff_config", "Handoff config", "No matching handoff config was found.", { fix: "npx @boomin/cli handoff provision" });
       } else if (handoffSecret && handoffConfig.secretPrefix && !handoffSecret.startsWith(handoffConfig.secretPrefix)) {
-        doctorCheck(checks, "fail", "handoff_config", "Handoff config", "Local handoff signing secret does not match the active Boomin config.", { fix: "Rotate or update the handoff signing secret in your server env." });
+        doctorCheck(checks, "fail", "handoff_config", "Handoff config", "Local handoff signing secret does not match the active Boomin config.", { fix: "npx @boomin/cli handoff provision --rotate" });
       } else {
         doctorCheck(checks, "pass", "handoff_config", "Handoff config", `Active handoff config found for issuer ${handoffConfig.issuer || handoffIssuer || "unknown"}.`);
         handoffReady = true;
       }
     } catch (error) {
-      doctorCheck(checks, "fail", "handoff_config", "Handoff config", error.message, { fix: "Create or rotate the handoff config in Boomin Program Settings." });
+      doctorCheck(checks, "fail", "handoff_config", "Handoff config", error.message, { fix: "npx @boomin/cli handoff provision" });
     }
   }
 
@@ -1214,7 +1317,7 @@ async function doctor(flags = {}) {
   const referralBaseUrl = adminConnectConfig?.metadata?.referralBaseUrl || adminConnectConfig?.metadata?.referral_base_url;
   const referralDestination = envValue(envFile, "BOOMIN_REFERRAL_DESTINATION_URL");
   if (!handoffReady) {
-    doctorCheck(checks, "skip", "referral_readiness", "Referral readiness", "Skipped until signed handoff is configured.", { fix: "Create a handoff config, then run `npx @boomin/cli referral init --framework next --auth custom --write`." });
+    doctorCheck(checks, "skip", "referral_readiness", "Referral readiness", "Skipped until signed handoff is configured.", { fix: "npx @boomin/cli handoff provision, then npx @boomin/cli referral init --framework next --auth custom --write" });
   } else if (missingReferralRoutes.length || !referralBaseUrl || !referralDestination) {
     const missing = [
       ...missingReferralRoutes,
@@ -1309,12 +1412,17 @@ async function init(flags = {}) {
       ? { ...currentConfig, ...updatePayload, public_key: currentConfig.public_key }
       : (await request(apiBase, `/programs/${encodeURIComponent(program.id)}/connect-config`, { method: "POST", token, body: updatePayload })).config;
 
+    const publicKeyValue = config.public_key || config.publicKey;
     const envValues = {
-      VITE_BOOMIN_PUBLIC_KEY: config.public_key || config.publicKey,
+      // Browser SDK (Vite / React) vars.
+      VITE_BOOMIN_PUBLIC_KEY: publicKeyValue,
       VITE_BOOMIN_PROGRAM_ID: program.id,
       VITE_BOOMIN_API_BASE: connectApiBase(flags),
+      // Server vars the scaffolded Next.js referral routes read.
+      BOOMIN_CONNECT_PUBLIC_KEY: publicKeyValue,
+      BOOMIN_CONNECT_PROGRAM_ID: program.id,
     };
-    const envResult = await upsertEnvLocal(envValues, flags.dryRun);
+    const envResult = await upsertEnvFile(envValues, { dryRun: flags.dryRun });
     const savedConfig = {
       ...(await loadConfig()),
       apiBase,
@@ -1345,7 +1453,7 @@ async function init(flags = {}) {
       console.log(`Public key: ${config.public_key || config.publicKey}`);
       console.log(`Wrote: ${envResult.envPath}`);
       console.log(`Allowed origins: ${allowedOrigins.join(", ")}`);
-      printReactSnippet();
+      printReactSnippet(await detectFramework());
     }
   } finally {
     rl?.close();
@@ -1731,6 +1839,9 @@ async function platformCommand(subcommand, flags = {}) {
 }
 
 async function handoffCommand(subcommand, flags = {}) {
+  if (subcommand === "provision" || subcommand === "rotate") {
+    return handoffProvision({ ...flags, rotate: flags.rotate || subcommand === "rotate" });
+  }
   if (subcommand !== "init") {
     printHelp(["handoff"]);
     return;
@@ -1762,6 +1873,84 @@ async function handoffCommand(subcommand, flags = {}) {
   await fs.mkdir(path.dirname(absolutePath), { recursive: true });
   await fs.writeFile(absolutePath, source);
   console.log(`Wrote ${routePath}`);
+}
+
+async function handoffProvision(flags = {}) {
+  const apiBase = appApiBase(flags);
+  const { token } = await ensureLogin(flags);
+  const config = await loadConfig();
+  const envFile = await readEnvFile(path.join(process.cwd(), ".env.local"));
+  const programId = flags.programId
+    || envFile.values.BOOMIN_CONNECT_PROGRAM_ID
+    || envFile.values.VITE_BOOMIN_PROGRAM_ID
+    || config.defaultProgramId;
+  if (!programId) {
+    throw new Error("Could not determine a program id. Pass --program-id, or run `npx @boomin/cli init` first.");
+  }
+  const issuer = flags.issuer || envFile.values.BOOMIN_HANDOFF_ISSUER || "your-app.com";
+  const rotate = Boolean(flags.rotate);
+  const route = rotate
+    ? `/programs/${encodeURIComponent(programId)}/handoff-config/rotate`
+    : `/programs/${encodeURIComponent(programId)}/handoff-config`;
+  const body = removeEmpty({
+    issuer,
+    audience: flags.audience,
+    signingSecret: flags.signingSecret,
+  });
+
+  const response = await request(apiBase, route, { method: "POST", token, body });
+  const handoffConfig = response.config || null;
+  const signingSecret = response.signingSecret || null;
+  const resolvedIssuer = handoffConfig?.issuer || issuer;
+
+  let envResult = null;
+  if (signingSecret) {
+    const updates = {
+      BOOMIN_HANDOFF_SIGNING_SECRET: signingSecret,
+      BOOMIN_HANDOFF_ISSUER: resolvedIssuer,
+      BOOMIN_CONNECT_PROGRAM_ID: programId,
+    };
+    const publicKey = envFile.values.BOOMIN_CONNECT_PUBLIC_KEY
+      || envFile.values.VITE_BOOMIN_PUBLIC_KEY
+      || config.defaultPublicKey;
+    if (publicKey) updates.BOOMIN_CONNECT_PUBLIC_KEY = publicKey;
+    envResult = await upsertEnvFile(updates, { dryRun: flags.dryRun });
+  }
+
+  if (flags.json) {
+    printJson({
+      ok: true,
+      rotated: rotate,
+      programId,
+      issuer: resolvedIssuer,
+      config: handoffConfig,
+      signingSecret: signingSecret || undefined,
+      secretRevealed: Boolean(signingSecret),
+      envPath: envResult?.envPath,
+      dryRun: Boolean(flags.dryRun),
+    });
+    return;
+  }
+
+  if (signingSecret) {
+    console.log(`Handoff config ${rotate ? "rotated" : "provisioned"} for issuer ${resolvedIssuer}.`);
+    console.log("");
+    console.log("Signing secret (shown once — copy it now):");
+    console.log(`  ${signingSecret}`);
+    console.log("");
+    if (flags.dryRun) {
+      console.log("Dry run: .env.local was not modified.");
+    } else {
+      console.log(`Saved BOOMIN_HANDOFF_SIGNING_SECRET, BOOMIN_HANDOFF_ISSUER, and BOOMIN_CONNECT_* to ${envResult.envPath}.`);
+      console.log("Set the same values in your production server environment.");
+    }
+    console.log("");
+    console.log("Next: npx @boomin/cli doctor   (handoff_config should now pass)");
+  } else {
+    console.log(`A handoff config already exists for issuer ${resolvedIssuer}; its signing secret stays hidden.`);
+    console.log("To mint a fresh secret (this invalidates the previous one), run:");
+    console.log("  npx @boomin/cli handoff provision --rotate");
+  }
 }
 
 async function referralCommand(subcommand, flags = {}) {
