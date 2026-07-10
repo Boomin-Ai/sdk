@@ -478,11 +478,20 @@ Generated files:
   app/r/[code]/route.js
   app/partner/page.jsx
 
+With --write it also wires the referral runtime:
+  - writes BOOMIN_REFERRAL_DESTINATION_URL to .env.local (defaults to your app's primary origin)
+  - sets program metadata referralBaseUrl to "<primary origin>/r" so referral
+    links use your app's /r route instead of the boomin.ai/r/ fallback
+    (an already-set referralBaseUrl is kept unless --origin is passed)
+
 Flags:
   --framework next        Generate Next.js App Router files.
   --auth custom           custom, clerk, or supabase.
   --write                 Write files instead of printing a preview.
   --yes                   Overwrite existing generated files.
+  --origin <url>          Primary app origin for referralBaseUrl (repeatable; first wins).
+  --destination-url <url> Where /r/[code] redirects (BOOMIN_REFERRAL_DESTINATION_URL).
+  --program-id <id>       Program to configure (defaults to .env.local / saved config).
   --json                  Print machine-readable output.
 `);
     return;
@@ -893,6 +902,17 @@ async function detectOrigins(flags) {
     origins.add("http://localhost:3000");
   }
   return [...origins];
+}
+
+/**
+ * The app's primary origin: an explicit --origin wins, then the Next.js dev
+ * origin when the project is a Next app, then the first detected origin.
+ */
+async function primaryAppOrigin(flags) {
+  if (flags.origins && flags.origins.length) return stripTrailingSlash(flags.origins[0]);
+  const origins = await detectOrigins(flags);
+  const nextOrigin = origins.find((origin) => origin.endsWith(":3000"));
+  return stripTrailingSlash(nextOrigin || origins[0]);
 }
 
 async function upsertEnvLocal(values, dryRun) {
@@ -1953,6 +1973,72 @@ async function handoffProvision(flags = {}) {
   }
 }
 
+/**
+ * Make the scaffolded referral routes actually serve referral links:
+ * - write BOOMIN_REFERRAL_DESTINATION_URL into .env.local (the app/r/[code]
+ *   redirect route reads it), defaulting to the app's primary origin;
+ * - set the program's connect-config metadata referralBaseUrl to
+ *   "<primary origin>/r" so standing responses return links on the app's
+ *   own domain instead of the boomin.ai/r/ fallback.
+ *
+ * Best-effort: never fails the scaffold. An existing referralBaseUrl (e.g. a
+ * production domain) is left alone unless an explicit --origin is passed.
+ */
+async function configureReferralRuntime(flags = {}) {
+  const summary = { referralBaseUrl: null, referralBaseUrlAction: "skipped", destinationUrl: null, envPath: null, warnings: [] };
+  const origin = await primaryAppOrigin(flags);
+  const desiredBaseUrl = `${origin}/r`;
+
+  const envFile = await readEnvFile(path.join(process.cwd(), ".env.local"));
+  const existingDestination = envFile.values.BOOMIN_REFERRAL_DESTINATION_URL;
+  const destinationUrl = flags.destinationUrl
+    ? stripTrailingSlash(String(flags.destinationUrl))
+    : existingDestination || origin;
+  const envResult = await upsertEnvFile({ BOOMIN_REFERRAL_DESTINATION_URL: destinationUrl }, { dryRun: flags.dryRun });
+  summary.destinationUrl = destinationUrl;
+  summary.envPath = envResult.envPath;
+
+  try {
+    const config = await loadConfig();
+    const programId = flags.programId
+      || envFile.values.BOOMIN_CONNECT_PROGRAM_ID
+      || envFile.values.VITE_BOOMIN_PROGRAM_ID
+      || config.defaultProgramId;
+    if (!programId) {
+      throw new Error("no program id found — run `npx @boomin/cli init` first");
+    }
+    if (!config.authToken) {
+      throw new Error("no saved Boomin login — run `npx @boomin/cli login` first");
+    }
+    const apiBase = appApiBase(flags);
+    const token = config.authToken;
+    const current = await request(apiBase, `/programs/${encodeURIComponent(programId)}/connect-config`, { token });
+    const metadata = current.config?.metadata || {};
+    const existingBaseUrl = metadata.referralBaseUrl || metadata.referral_base_url;
+    if (existingBaseUrl && !(flags.origins && flags.origins.length)) {
+      summary.referralBaseUrl = existingBaseUrl;
+      summary.referralBaseUrlAction = "kept";
+    } else if (flags.dryRun) {
+      summary.referralBaseUrl = desiredBaseUrl;
+      summary.referralBaseUrlAction = "dry_run";
+    } else {
+      await request(apiBase, `/programs/${encodeURIComponent(programId)}/connect-config`, {
+        method: "POST",
+        token,
+        body: { metadata: { referralBaseUrl: desiredBaseUrl } },
+      });
+      summary.referralBaseUrl = desiredBaseUrl;
+      summary.referralBaseUrlAction = "set";
+    }
+  } catch (error) {
+    summary.warnings.push(
+      `Could not set program metadata referralBaseUrl (${error.message}). ` +
+      "Referral links will fall back to boomin.ai/r/ until it is set — re-run `npx @boomin/cli referral init --write` after `npx @boomin/cli login`.",
+    );
+  }
+  return summary;
+}
+
 async function referralCommand(subcommand, flags = {}) {
   if (subcommand !== "init") {
     printHelp(["referral"]);
@@ -1998,6 +2084,16 @@ async function referralCommand(subcommand, flags = {}) {
     await fs.writeFile(absolutePath, source);
     console.log(`Wrote ${filePath}`);
   }
+
+  const runtime = await configureReferralRuntime(flags);
+  console.log(`Wrote BOOMIN_REFERRAL_DESTINATION_URL=${runtime.destinationUrl} to ${runtime.envPath}`);
+  if (runtime.referralBaseUrlAction === "set") {
+    console.log(`Program metadata referralBaseUrl set to ${runtime.referralBaseUrl} — referral links now use your app's /r route.`);
+  } else if (runtime.referralBaseUrlAction === "kept") {
+    console.log(`Program metadata referralBaseUrl already set (${runtime.referralBaseUrl}); left unchanged. Pass --origin <url> to replace it.`);
+  }
+  for (const warning of runtime.warnings) console.log(`Warning: ${warning}`);
+  console.log("Next: npx @boomin/cli doctor   (referral_readiness should now pass)");
 }
 
 async function skillCommand(subcommand, flags = {}) {
