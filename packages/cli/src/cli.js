@@ -551,7 +551,7 @@ Signed handoff lets your logged-in app user click one button while your server s
   console.log(`Boomin CLI
 
 Usage:
-  npx @boomin/cli init [--yes] [--dry-run]
+  npx @boomin/cli init [--yes] [--dry-run] [--list]
   npx @boomin/cli login [--no-open]
   npx @boomin/cli doctor [--json]
   npx @boomin/cli status [--json]
@@ -582,6 +582,7 @@ Setup flags:
   --origin <url>            Add an allowed origin. Can be repeated.
   --program-id <id>         Use an existing creator program.
   --program-name <name>     Select or create a creator program by name.
+  --list                    List the program on Boomin Connect discover (default: private).
   --org-id <id>             Switch to an existing organization.
   --org-name <name>         Select or create an organization by name.
   --yes                     Accept defaults for non-interactive setup.
@@ -842,26 +843,26 @@ async function selectProgram(apiBase, token, org, brand, flags, rl) {
   if (flags.programId) {
     const selected = programs.find((program) => String(program.id) === String(flags.programId));
     if (!selected) throw new Error(`Program ${flags.programId} was not found in ${brand.name}.`);
-    return selected;
+    return ensureProgramListing(apiBase, token, selected, flags);
   }
 
   if (flags.programName) {
     const selected = programs.find((program) => String(program.name || "").toLowerCase() === String(flags.programName).toLowerCase());
-    if (selected) return selected;
+    if (selected) return ensureProgramListing(apiBase, token, selected, flags);
     const created = await request(apiBase, `/brands/${encodeURIComponent(brand.id)}/programs`, {
       method: "POST",
       token,
-      body: { name: flags.programName, type: "performance", description: "Partner Connect program" },
+      body: { name: flags.programName, type: "performance", description: "Partner Connect program", visibility: await resolveProgramVisibility(flags, rl) },
     });
     return created.program;
   }
 
-  if (!isInteractive(flags) && programs.length > 0) return programs[0];
+  if (!isInteractive(flags) && programs.length > 0) return ensureProgramListing(apiBase, token, programs[0], flags);
 
   if (isInteractive(flags) && programs.length > 0) {
     const choices = [...programs.map((program) => ({ type: "existing", program })), { type: "create" }];
     const choice = await promptChoice("Choose a partner program:", choices, (item) => (item.type === "create" ? "Create a new partner program" : item.program.name), rl);
-    if (choice.type === "existing") return choice.program;
+    if (choice.type === "existing") return ensureProgramListing(apiBase, token, choice.program, flags);
   }
 
   const defaultName = `${brand.name || org.name || "Boomin"} Partner Program`;
@@ -869,9 +870,31 @@ async function selectProgram(apiBase, token, org, brand, flags, rl) {
   const created = await request(apiBase, `/brands/${encodeURIComponent(brand.id)}/programs`, {
     method: "POST",
     token,
-    body: { name: programName, type: "performance", description: "Partner Connect program" },
+    body: { name: programName, type: "performance", description: "Partner Connect program", visibility: await resolveProgramVisibility(flags, rl) },
   });
   return created.program;
+}
+
+// Connect/Discover listing. Default is PRIVATE: only --list (or an explicit
+// interactive yes at creation time) opts a program into the public feed.
+async function resolveProgramVisibility(flags, rl) {
+  if (flags.list) return "listed";
+  if (!rl) return "private";
+  const answer = (await rl.question("List this campaign on Boomin Connect discover? (y/N): ")).trim().toLowerCase();
+  return answer === "y" || answer === "yes" ? "listed" : "private";
+}
+
+// --list on an EXISTING program flips it to listed via the update path.
+// Without the flag we never touch an existing program's visibility here —
+// the interactive prompt only runs when a program is being created.
+async function ensureProgramListing(apiBase, token, program, flags) {
+  if (!flags.list || program.visibility === "listed") return program;
+  const updated = await request(apiBase, `/programs/${encodeURIComponent(program.id)}`, {
+    method: "PATCH",
+    token,
+    body: { visibility: "listed" },
+  });
+  return updated.program || program;
 }
 
 function toArray(value) {
@@ -1450,6 +1473,7 @@ async function init(flags = {}) {
       console.log(`Org: ${org.name}`);
       console.log(`Brand: ${brand.name}`);
       console.log(`Program: ${program.name}`);
+      console.log(`Listed on Connect discover: ${program.visibility === "listed" ? "yes" : "no (private)"}`);
       console.log(`Public key: ${config.public_key || config.publicKey}`);
       console.log(`Wrote: ${envResult.envPath}`);
       console.log(`Allowed origins: ${allowedOrigins.join(", ")}`);
