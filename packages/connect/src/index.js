@@ -3,7 +3,33 @@ const DEFAULT_TIMEOUT_MS = 15000;
 const REDIRECT_RESULT_KEY = "boomin_connect_redirect_result";
 const TOKEN_STORAGE_PREFIX = "boomin_connect_token";
 
+const MISSING_PARTNER_TOKEN_MESSAGE = [
+  "Boomin.joinProgram requires a verified partner token.",
+  "Prove the email first: await Boomin.requestOtp({ email }) then await Boomin.verifyOtp({ email, code }),",
+  "which stores the partner token this call needs. If you obtained a token some other way",
+  "(signed handoff or a completed OAuth session), pass it as joinProgram({ authToken }).",
+  "Passing a bare email is no longer supported — breaking change in @boomin/connect 0.2.0.",
+].join(" ");
+
+const IGNORED_EMAIL_WARNING = [
+  "@boomin/connect: joinProgram no longer sends `email`.",
+  "The partner identity comes from the verified token, so the `email` option is ignored.",
+  "Drop it and rely on requestOtp/verifyOtp.",
+].join(" ");
+
 const isBrowser = () => typeof window !== "undefined" && typeof document !== "undefined";
+
+function missingPartnerTokenError() {
+  const error = new Error(MISSING_PARTNER_TOKEN_MESSAGE);
+  error.code = "missing_partner_token";
+  return error;
+}
+
+function warnIgnoredEmail() {
+  if (typeof console !== "undefined" && typeof console.warn === "function") {
+    console.warn(IGNORED_EMAIL_WARNING);
+  }
+}
 
 class BoominConnectClient {
   constructor() {
@@ -132,14 +158,22 @@ class BoominConnectClient {
 
   async joinProgram(options = {}) {
     const config = this.requireConfig();
+    const token = options.authToken || this.getStoredToken();
+    if (!token) {
+      // Fail fast: the API rejects tokenless joins, so never make the doomed call.
+      const error = missingPartnerTokenError();
+      this.emitConnectError(error);
+      throw error;
+    }
+    if (options.email) warnIgnoredEmail();
+
     try {
       const result = await this.request(`${config.apiBase}/join`, {
         method: "POST",
-        headers: this.authHeaders(),
+        headers: { Authorization: `Bearer ${token}` },
         body: JSON.stringify(removeEmpty({
           publicKey: config.publicKey,
           programId: options.programId || config.programId,
-          email: options.email,
           name: options.name,
           phone: options.phone,
           referralCode: options.referralCode,
