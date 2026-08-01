@@ -1,6 +1,6 @@
 {
   "name": "@boomin/connect",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Browser SDK for Boomin Partner Connect.",
   "type": "module",
   "repository": {
@@ -36,5 +36,5 @@
     "oauth"
   ],
   "author": "Boomin",
-  "license": "UNLICENSED"
+  "license": "MIT"
 }
