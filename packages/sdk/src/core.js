@@ -17,7 +17,49 @@ const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const camelToSnake = (key) => key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+/**
+ * camelCase -> snake_case, but ONLY for well-formed camelCase identifiers
+ * (`startingAfter`, `enabledEvents`). Anything else — already-snake_case keys,
+ * PascalCase, dotted or hyphenated keys, keys with leading underscores — is
+ * returned untouched, so this can never mangle a name it does not understand.
+ */
+export function toSnakeKey(key) {
+  if (!/^[a-z][A-Za-z0-9]*$/.test(key)) return key;
+  return key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+}
+
+function isPlainObject(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/**
+ * Convert the TOP-LEVEL keys of a request body to the API's snake_case wire
+ * form — the same conversion query params have always had.
+ *
+ * THE RULE IS TOP-LEVEL ONLY, and that is deliberate. Every field the v1 API
+ * reads lives at the top level of the body; the nested values (`spec`,
+ * `metadata`, `properties`, `permissions`, `rights`, `compensation_defaults`,
+ * `desired_state`, …) are caller-defined payloads the API stores verbatim, so
+ * rewriting their keys would silently corrupt user data. The one nested
+ * camelCase spelling the API cares about (`budget.totalMinor`) is accepted
+ * server-side as an alias, so it needs no help from here.
+ *
+ * An explicitly written snake_case key always wins over a camelCase twin, and
+ * non-plain-object bodies (arrays, Date, FormData, …) pass through untouched.
+ */
+export function snakeCaseBody(body) {
+  if (!isPlainObject(body)) return body;
+  const converted = {};
+  for (const [rawKey, value] of Object.entries(body)) {
+    const key = toSnakeKey(rawKey);
+    // Never let a derived key clobber one the caller wrote out explicitly.
+    if (key !== rawKey && Object.prototype.hasOwnProperty.call(body, key)) continue;
+    converted[key] = value;
+  }
+  return converted;
+}
 
 /**
  * Serialize query params. Top-level camelCase keys are converted to the API's
@@ -29,7 +71,7 @@ export function buildQueryString(query) {
   const search = new URLSearchParams();
   for (const [rawKey, value] of Object.entries(query)) {
     if (value === undefined || value === null) continue;
-    const key = camelToSnake(rawKey);
+    const key = toSnakeKey(rawKey);
     if (Array.isArray(value)) {
       for (const entry of value) {
         if (entry === undefined || entry === null) continue;
@@ -125,7 +167,12 @@ export class HttpClient {
     const requestInit = {
       method: verb,
       headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      // Bodies get the same camelCase -> snake_case treatment query params get
+      // (top level only — see snakeCaseBody). Without it a camelCase field was
+      // dropped by the API's schema and the call answered 200 OK having done
+      // nothing: `enabledEvents` on webhook create landed as `enabled_events:
+      // []`, which means SUBSCRIBE TO EVERY EVENT TYPE.
+      body: body !== undefined ? JSON.stringify(snakeCaseBody(body)) : undefined,
     };
 
     let lastError = null;

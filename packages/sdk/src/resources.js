@@ -8,11 +8,31 @@
  * - mutations are POSTs (POST-update API) and auto-carry an Idempotency-Key.
  */
 
-import { BoominError } from "./errors.js";
+import { BoominError, InvalidRequestError } from "./errors.js";
 import { makeListPromise, pathParam } from "./core.js";
 
 const TERMINAL_OPERATION_STATUSES = new Set(["succeeded", "partial", "failed", "canceled"]);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Accept either an operation id string or anything carrying one on `.id`.
+ *
+ * `distributions.launch` resolves `{ distribution, status, operation }` where
+ * BOTH refs are id STRINGS — but `pause`/`resume`/`cancel` resolve a full
+ * object with `operation` alongside, and a caller who already holds an
+ * Operation should not have to unwrap it. Forgiving both readings costs one
+ * function and removes the single most-copied broken line in the docs.
+ */
+function operationRef(value) {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && typeof value.id === "string") return value.id;
+  throw new InvalidRequestError(
+    "An operation id is required: pass the `operation` from a launch/pause/resume/cancel " +
+      "response (an id string) or an operation object. " +
+      `Got ${value === null ? "null" : typeof value}.`,
+    { code: "invalid_request" },
+  );
+}
 
 class ResourceClient {
   constructor(http) {
@@ -285,7 +305,9 @@ export class EventsClient extends ResourceClient {
 }
 
 export class OperationsClient extends ResourceClient {
-  retrieve(id, options) {
+  /** Accepts an operation id string or an operation object. */
+  retrieve(idOrOperation, options) {
+    const id = operationRef(idOrOperation);
     return this._http.get(`/operations/${pathParam(id, "id")}`, undefined, options);
   }
 
@@ -298,17 +320,26 @@ export class OperationsClient extends ResourceClient {
    * (succeeded | partial | failed | canceled) and return it — inspect
    * `operation.status` yourself; wait() does not throw on failed operations.
    * Throws BoominError code `operation_wait_timeout` when `timeout` elapses.
+   *
+   * Accepts an operation id string OR an operation object, because `launch`
+   * hands back an id string while `pause`/`resume`/`cancel` hand back an
+   * object — both readings must work.
    */
-  async wait(id, { timeout = 60000, pollInterval = 1000, ...options } = {}) {
+  async wait(idOrOperation, { timeout = 60000, pollInterval = 1000, ...options } = {}) {
+    const id = operationRef(idOrOperation);
     const startedAt = Date.now();
     for (;;) {
       const operation = await this.retrieve(id, options);
       if (operation && TERMINAL_OPERATION_STATUSES.has(operation.status)) return operation;
       const elapsed = Date.now() - startedAt;
       if (elapsed + pollInterval > timeout) {
+        // `waiting_reason` is the whole diagnosis when an operation parks
+        // (funding_required, provider_review, …) — a timeout that hides it
+        // sends the caller looking in the wrong place entirely.
+        const reason = operation?.waiting_reason ? ` (${operation.waiting_reason})` : "";
         throw new BoominError(
           `Operation ${id} did not reach a terminal status within ${timeout}ms ` +
-            `(last status: ${operation?.status ?? "unknown"}).`,
+            `(last status: ${operation?.status ?? "unknown"}${reason}).`,
           { code: "operation_wait_timeout" },
         );
       }
@@ -317,17 +348,33 @@ export class OperationsClient extends ResourceClient {
   }
 }
 
+/**
+ * `webhook_endpoints` is the ONE v1 family whose single-object responses come
+ * wrapped as `{ webhook_endpoint: {...} }` while every other resource returns
+ * the object bare. Unwrap it here so the client is uniform — otherwise the
+ * documented `const { secret } = await endpoints.create(...)` yields undefined,
+ * and since the signing secret is revealed exactly once, it is then
+ * unrecoverable without a rotation the caller does not know they need.
+ * Tolerant of a bare object so an un-wrapping API stays compatible.
+ */
+const unwrapEndpoint = (response) =>
+  (response && typeof response === "object" && response.webhook_endpoint) || response;
+
 class WebhookEndpointsClient extends ResourceClient {
-  create(params, options) {
-    return this._http.post("/webhook_endpoints", params, options);
+  async create(params, options) {
+    return unwrapEndpoint(await this._http.post("/webhook_endpoints", params, options));
   }
 
-  retrieve(id, options) {
-    return this._http.get(`/webhook_endpoints/${pathParam(id, "id")}`, undefined, options);
+  async retrieve(id, options) {
+    return unwrapEndpoint(
+      await this._http.get(`/webhook_endpoints/${pathParam(id, "id")}`, undefined, options),
+    );
   }
 
-  update(id, params, options) {
-    return this._http.post(`/webhook_endpoints/${pathParam(id, "id")}`, params, options);
+  async update(id, params, options) {
+    return unwrapEndpoint(
+      await this._http.post(`/webhook_endpoints/${pathParam(id, "id")}`, params, options),
+    );
   }
 
   list(params, options) {
@@ -336,11 +383,13 @@ class WebhookEndpointsClient extends ResourceClient {
 
   /** Installs a fresh signing secret (revealed once in this response); the
    * previous secret stays honored for a rotation overlap window. */
-  rotateSecret(id, params, options) {
-    return this._http.post(
-      `/webhook_endpoints/${pathParam(id, "id")}/rotate_secret`,
-      params ?? {},
-      options,
+  async rotateSecret(id, params, options) {
+    return unwrapEndpoint(
+      await this._http.post(
+        `/webhook_endpoints/${pathParam(id, "id")}/rotate_secret`,
+        params ?? {},
+        options,
+      ),
     );
   }
 

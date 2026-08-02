@@ -6,11 +6,13 @@
  *
  * const boomin = new Boomin("sk_live_...");
  * const distribution = await boomin.distributions.create({
+ *   name: "Spring launch",
  *   objective: "acquisition",
  *   programs: ["prog_123"],
  * });
+ * // `operation` is an id STRING; wait() also accepts an operation object.
  * const { operation } = await boomin.distributions.launch(distribution.id);
- * await boomin.operations.wait(operation.id, { timeout: 120000 });
+ * await boomin.operations.wait(operation, { timeout: 120000 });
  * ```
  *
  * fetch + WebCrypto only: Node >= 18, Cloudflare Workers, Bun, Deno, Edge.

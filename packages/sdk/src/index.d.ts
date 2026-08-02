@@ -54,15 +54,21 @@ export interface ListPromise<T> extends PromiseLike<List<T>>, AsyncIterable<T> {
 }
 
 export interface PaginationParams {
-  /** Page size. */
+  /** Page size (1-100). */
   limit?: number;
   /** Cursor: return items after this object id. Sent as `starting_after`. */
   startingAfter?: string;
-  /** Cursor: return items before this object id. Sent as `ending_before`. */
-  endingBefore?: string;
 }
 
-/** Open params object: known fields are typed, unknown fields pass through. */
+/**
+ * Params object: known fields are typed, extra fields still compile.
+ *
+ * Note the v1 API REJECTS body fields it does not recognize (400
+ * `invalid_request`, naming the field and the field you probably meant), so an
+ * extra key is a runtime error, not a silent no-op. Params are written in
+ * camelCase or snake_case; the SDK converts the top level of every body and
+ * query string to the snake_case wire form.
+ */
 type Params<Known = object> = Known & { [key: string]: unknown };
 
 export type Metadata = Record<string, string | number | boolean | null>;
@@ -96,6 +102,17 @@ export type DistributionObjective =
   | "event_promotion"
   | "custom"
   | (string & {});
+export type ProgramType = "performance" | "upfront";
+export type ProgramStatus = "active" | "paused" | "archived";
+export type ProgramVisibility = "private" | "listed";
+export type RequirementScope =
+  | "program_entry"
+  | "program_maintenance"
+  | "tier"
+  | "campaign"
+  | "benefit"
+  | "invite";
+
 export type BudgetMode = "none" | "metered" | "funded";
 export type BudgetAsset = "usd" | "credit";
 export type SubjectKind = "event" | "offer" | "resource" | (string & {});
@@ -201,33 +218,57 @@ interface BaseObject {
 export interface Program extends BaseObject {
   object?: "program";
   name?: string;
+  type?: ProgramType;
   description?: string | null;
-  status?: string;
+  status?: ProgramStatus;
+  visibility?: ProgramVisibility;
   metadata?: Metadata;
 }
 
 export interface ProgramRequirement extends BaseObject {
-  object?: "program_requirement";
-  program_id?: string;
-  kind?: string;
-  config?: Record<string, unknown>;
+  object?: "program.requirement";
+  /** `prog_…` reference (the wire field is `program`, not `program_id`). */
+  program?: string;
+  scope?: RequirementScope;
+  scope_id?: string;
+  metric_key?: string;
+  operator?: "gte" | "lte" | "eq" | "neq" | "exists";
+  threshold?: number | null;
+  window_days?: number | null;
+  source?: string;
+  weight?: number;
+  required?: boolean;
+  status?: "active" | "paused" | "archived";
+  metadata?: Metadata;
 }
 
 export interface ProgramTier extends BaseObject {
-  object?: "program_tier";
-  program_id?: string;
+  object?: "program.tier";
+  /** `prog_…` reference (the wire field is `program`, not `program_id`). */
+  program?: string;
   name?: string;
   rank?: number;
-  config?: Record<string, unknown>;
+  status?: "active" | "paused" | "archived";
+  metadata?: Metadata;
 }
 
+/** `null` until the program's connect surface has been minted. */
 export interface ProgramConnectConfig {
-  program_id?: string;
+  object?: "program.connect_config";
+  public_key?: string;
+  allowed_origins?: string[];
+  allowed_redirect_origins?: string[];
+  required_channels?: string[];
+  default_approval_status?: "pending" | "approved";
+  metadata?: Metadata;
   [key: string]: unknown;
 }
 
 export interface ProgramHandoffConfig {
-  program_id?: string;
+  issuer?: string;
+  audience?: string;
+  /** Returned only when just created or explicitly supplied. */
+  signing_secret?: string;
   [key: string]: unknown;
 }
 
@@ -241,8 +282,8 @@ export interface Partner extends BaseObject {
 
 export interface Partnership extends BaseObject {
   object?: "partnership";
-  brand_id?: string;
-  partner_id?: string;
+  /** `ptnr_…` id, or an inlined `{id, name, email}` on list/retrieve. */
+  partner?: string | { id: string; name: string | null; email: string | null };
   status: PartnershipStatus;
   rights?: Record<string, unknown> | null;
   permissions?: Record<string, unknown> | null;
@@ -254,23 +295,31 @@ export interface Partnership extends BaseObject {
 
 export interface Enrollment extends BaseObject {
   object?: "enrollment";
-  program_id: string;
-  partnership_id: string;
+  /** `prog_…` / `pship_…` / `ptnr_…` references — flat, not `*_id` fields. */
+  program: string;
+  partnership: string;
+  partner?: string;
   /** The brand's decision — never touched by pause/resume/archive. */
   approval_status: EnrollmentApprovalStatus;
   /** Participation lifecycle — never touched by approve/reject. */
   status: EnrollmentStatus;
   billing_status?: EnrollmentBillingStatus;
+  qualification_status?: string | null;
   referral_code?: string | null;
-  participant_brand_id?: string | null;
+  metadata?: Metadata;
   joined_at?: string | null;
+  approved_at?: string | null;
+  rejected_at?: string | null;
 }
 
-export interface DistributionSubject {
-  subject_kind: SubjectKind;
-  subject_id: string;
-  role?: string | null;
-  [key: string]: unknown;
+/** Live budget echo — `total` is minor units; `consumed`/`released` come off
+ *  the reservation (0 when none exists yet). */
+export interface DistributionBudget {
+  mode: BudgetMode;
+  asset: BudgetAsset | null;
+  total: number | null;
+  consumed: number;
+  released: number;
 }
 
 export interface Distribution extends BaseObject {
@@ -281,31 +330,44 @@ export interface Distribution extends BaseObject {
   status: DistributionStatus;
   /** Deployment plan slots, enrollment policy, destination URL, asset refs. */
   spec?: Record<string, unknown>;
-  /** Associated program ids (plural from the first release). */
+  plan_hash?: string | null;
+  /** Associated `prog_…` ids (plural from the first release). */
   programs?: string[];
-  subjects?: DistributionSubject[];
-  budget_mode?: BudgetMode;
-  budget_asset?: BudgetAsset | null;
-  budget_total_minor?: number | null;
-  reservation_id?: string | null;
+  budget?: DistributionBudget;
+  /** Present on retrieve/list: `{ total, live }` rollup. */
+  deployments?: { total: number; live: number };
   stats?: Record<string, unknown>;
   error?: Record<string, unknown> | null;
   launched_at?: string | null;
+  paused_at?: string | null;
   completed_at?: string | null;
   canceled_at?: string | null;
+  failed_at?: string | null;
 }
 
-/** 202 body of `distributions.launch` — never a synchronous success. */
+/** The verdict `distributions.validate` returns alongside the distribution. */
+export interface DistributionValidation extends Distribution {
+  valid: boolean;
+  errors: unknown[];
+}
+
+/**
+ * 202 body of `distributions.launch` — never a synchronous success.
+ *
+ * Both refs are id STRINGS, not embedded objects: the operation is the
+ * progress surface. Pass `operation` straight to `operations.wait()`.
+ */
 export interface DistributionLaunchResult {
-  distribution: Distribution;
+  distribution: string;
   status: "launching";
-  operation: Operation;
+  operation: string;
   [key: string]: unknown;
 }
 
 export interface Deployment extends BaseObject {
   object?: "deployment";
-  distribution_id: string;
+  /** `dist_…` reference (the wire field is `distribution`). */
+  distribution: string;
   mode: DeploymentMode;
   medium: DeploymentMedium;
   channel?: string;
@@ -313,9 +375,10 @@ export interface Deployment extends BaseObject {
   adapter?: string;
   /** Stable slot key, UNIQUE per distribution (e.g. `enroll_123:instagram:reel:primary`). */
   deployment_key?: string;
-  partnership_id?: string | null;
-  program_enrollment_id?: string | null;
-  connection_id?: string | null;
+  /** `pship_…` / `enr_…` / `conn_…` references — flat, not `*_id` fields. */
+  partnership?: string | null;
+  enrollment?: string | null;
+  connection?: string | null;
   /** Desired lifecycle state (what the platform is driving toward). */
   status: DeploymentDesiredStatus;
   /** Provider-observed state (never written by intent). */
@@ -331,27 +394,37 @@ export interface Connection extends BaseObject {
   kind: ConnectionKind;
   provider: string;
   provider_account_id?: string | null;
-  owner_partner_id?: string | null;
-  owner_brand_id?: string | null;
+  /** Owner is a partner XOR a brand — one discriminated field, not two ids. */
+  owner?: { type: "partner" | "brand"; id: string };
   status?: string;
-  revoked_at?: string | null;
+  scopes?: string[] | null;
+  connected_at?: string | null;
+  disconnected_at?: string | null;
 }
 
 export interface PerformanceEvent extends BaseObject {
   object?: "performance_event";
-  deployment_id: string;
-  distribution_id: string;
-  provider?: string;
+  /** `dep_…` / `dist_…` references — flat, not `*_id` fields. */
+  deployment: string;
+  distribution: string;
   type?: string;
   source?: string;
-  external_event_id?: string | null;
-  idempotency_key?: string | null;
-  value?: number | null;
+  /** Minor units (cents), not `value`. */
+  value_minor?: number | null;
   currency?: string | null;
   quantity?: number | null;
   occurred_at?: string;
   received_at?: string;
   properties?: Record<string, unknown>;
+  /** True when this event replayed an existing idempotency/external id. */
+  duplicate?: boolean;
+  /**
+   * Whether the event reached the metric tables payouts read. Only mapped
+   * types project (`click` | `sale` | `purchase` | `install` | `referral`,
+   * plus the raw metric keys) — an unmapped type is recorded and visible in
+   * the summary but can never pay anyone.
+   */
+  projected?: boolean;
 }
 
 export interface PerformanceSummary {
@@ -380,15 +453,21 @@ export interface OperationError {
 
 export interface Operation extends BaseObject {
   object?: "operation";
-  subject_type: string;
-  subject_id: string;
+  /** One nested subject ref, not a `subject_type`/`subject_id` pair. */
+  subject: { type: string; id: string };
   /** e.g. `distribution.launch`, `deployment.apply`, `payout_batch.disburse`. */
   kind: string;
   status: OperationStatus;
+  /** Why a `waiting` operation is parked — the whole diagnosis when a launch
+   *  appears to hang (`funding_required` is the common one). */
   waiting_reason?: OperationWaitingReason | null;
-  parent_operation_id?: string | null;
+  attempts?: number;
+  max_attempts?: number;
+  target_operation_id?: string | null;
   error?: OperationError | null;
-  finished_at?: string | null;
+  progress?: Record<string, unknown> | null;
+  result?: Record<string, unknown> | null;
+  completed_at?: string | null;
 }
 
 export interface WebhookEndpoint extends BaseObject {
@@ -404,13 +483,20 @@ export interface WebhookEndpoint extends BaseObject {
 
 export interface Payout extends BaseObject {
   object?: "payout";
-  status?: string;
-  amount_minor?: number;
+  status?: "pending" | "awaiting_account" | "processing" | "paid" | "failed" | (string & {});
+  /** Cents — the wire field is `amount_cents`. */
+  amount_cents?: number;
   currency?: string;
-  partner_id?: string | null;
-  partnership_id?: string | null;
-  recipient_brand_id?: string | null;
-  batch_id?: string | null;
+  period_start?: string;
+  period_end?: string;
+  source_kind?: "rule" | "collaborator";
+  rule_id?: string | null;
+  recipient?: { kind: "user" | "partner"; id: string | null; name: string | null; email: string | null };
+  basis_kind?: string | null;
+  basis_cents?: number | null;
+  basis_metric_key?: string | null;
+  basis_metric_value?: number | null;
+  rate_bps?: number | null;
 }
 
 export interface PayoutBatch extends BaseObject {
@@ -418,11 +504,25 @@ export interface PayoutBatch extends BaseObject {
   rail?: string;
   status?: string;
   item_count?: number;
-  total_minor?: number;
+  /** Cents — the wire field is `total_amount_cents`. */
+  total_amount_cents?: number;
   currency?: string;
-  /** csv_batch rail: download URL for the exported file. */
-  file_url?: string | null;
-  operation_id?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  export_file_key?: string | null;
+  export_format?: string | null;
+  /** Present on `exportCsv`; may be null when presigning is unavailable — a
+   *  null here means the file was NOT delivered, even though the call is 201. */
+  download_url?: string | null;
+  exported_at?: string | null;
+  error?: Record<string, unknown> | null;
+}
+
+/** `payouts.run` recomputes the period and returns the rows plus a summary. */
+export interface PayoutRun {
+  object?: "payout_run";
+  payouts: Payout[];
+  summary: Record<string, unknown>;
 }
 
 export interface PayoutConnectStatus {
@@ -447,10 +547,27 @@ export interface ProgramConfigClient<T> {
   update(programId: string, params: Params, options?: RequestOptions): Promise<T>;
 }
 
+export interface ProgramCreateParams {
+  name: string;
+  /** Defaults to `performance`. There is no `affiliate` type. */
+  type?: ProgramType;
+  description?: string | null;
+  visibility?: ProgramVisibility;
+  metadata?: Metadata;
+}
+
+export interface ProgramUpdateParams {
+  name?: string;
+  description?: string | null;
+  status?: ProgramStatus;
+  visibility?: ProgramVisibility;
+  metadata?: Metadata;
+}
+
 export interface ProgramsClient {
-  create(params: Params<{ name?: string; description?: string; metadata?: Metadata }>, options?: RequestOptions): Promise<Program>;
+  create(params: Params<ProgramCreateParams>, options?: RequestOptions): Promise<Program>;
   retrieve(id: string, options?: RequestOptions): Promise<Program>;
-  update(id: string, params: Params, options?: RequestOptions): Promise<Program>;
+  update(id: string, params: Params<ProgramUpdateParams>, options?: RequestOptions): Promise<Program>;
   list(params?: Params<PaginationParams>, options?: RequestOptions): ListPromise<Program>;
   requirements: ProgramSubcollection<ProgramRequirement>;
   tiers: ProgramSubcollection<ProgramTier>;
@@ -484,9 +601,12 @@ export interface PartnershipsClient {
 export interface EnrollmentCreateParams {
   /** The Program this enrollment participates in (flat client — payload carries program). */
   program: string;
+  /** Identify the invitee by `ptnr_…` id OR by email — one of the two is required. */
   partner?: string;
-  partnership?: string;
   email?: string;
+  /** Display name, used when the email creates a new partner. */
+  name?: string;
+  referralCode?: string;
   metadata?: Metadata;
 }
 
@@ -501,6 +621,7 @@ export interface EnrollmentsClient {
         partnership?: string;
         approvalStatus?: EnrollmentApprovalStatus;
         status?: EnrollmentStatus;
+        // (list filters are query params: program, status, approval_status)
       }
     >,
     options?: RequestOptions,
@@ -513,16 +634,26 @@ export interface EnrollmentsClient {
   resume(id: string, params?: Params, options?: RequestOptions): Promise<Enrollment>;
 }
 
+export interface DistributionSubjectParam {
+  /** `kind` and `id` — NOT `subject_kind`/`subject_id`. */
+  kind: SubjectKind;
+  id: string;
+  role?: string;
+}
+
 export interface DistributionCreateParams {
-  objective: DistributionObjective;
-  name?: string;
-  description?: string;
-  /** Program associations — plural from the first release. */
+  /** Required. */
+  name: string;
+  objective?: DistributionObjective;
+  description?: string | null;
+  /** Program associations (`prog_…`) — plural from the first release. */
   programs?: string[];
+  subjects?: DistributionSubjectParam[];
+  /** `total` is minor units; `total_minor`/`totalMinor` are accepted aliases.
+   *  Nested keys are sent verbatim (the SDK converts the top level only). */
+  budget?: { mode: BudgetMode; asset?: BudgetAsset | null; total?: number | null; totalMinor?: number | null };
+  /** Free-form plan payload — stored verbatim, never key-rewritten. */
   spec?: Record<string, unknown>;
-  subjects?: Array<Params<{ subjectKind?: SubjectKind; subject_kind?: SubjectKind; subject_id?: string; role?: string }>>;
-  budget?: Params<{ mode?: BudgetMode; asset?: BudgetAsset; totalMinor?: number; total_minor?: number }>;
-  metadata?: Metadata;
 }
 
 export interface DistributionsClient {
@@ -532,12 +663,14 @@ export interface DistributionsClient {
   /** Allowed in draft|ready; any update invalidates validation → draft. */
   update(id: string, params: Params<Partial<DistributionCreateParams>>, options?: RequestOptions): Promise<Distribution>;
   list(
-    params?: Params<PaginationParams & { status?: DistributionStatus; program?: string }>,
+    params?: Params<PaginationParams & { status?: DistributionStatus }>,
     options?: RequestOptions,
   ): ListPromise<Distribution>;
-  validate(id: string, params?: Params, options?: RequestOptions): Promise<Distribution>;
-  /** Always async: resolves the 202 `{ distribution, status: 'launching', operation }`. */
-  launch(id: string, params?: Params<{ dryRun?: boolean }>, options?: RequestOptions): Promise<DistributionLaunchResult>;
+  /** Returns the distribution plus `{ valid, errors }`. */
+  validate(id: string, params?: Params, options?: RequestOptions): Promise<DistributionValidation>;
+  /** Always async: resolves the 202 `{ distribution, status: 'launching',
+   *  operation }` — all id STRINGS. Takes no body fields. */
+  launch(id: string, params?: Params, options?: RequestOptions): Promise<DistributionLaunchResult>;
   pause(id: string, params?: Params, options?: RequestOptions): Promise<Distribution>;
   resume(id: string, params?: Params, options?: RequestOptions): Promise<Distribution>;
   cancel(id: string, params?: Params, options?: RequestOptions): Promise<Distribution>;
@@ -571,17 +704,30 @@ export interface ConnectionsClient {
   revoke(id: string, params?: Params, options?: RequestOptions): Promise<Connection>;
 }
 
+/**
+ * ONE flat event per call, despite the plural collection name — there is no
+ * `{ events: [...] }` batch envelope.
+ */
 export interface PerformanceEventCreateParams {
-  deployment?: string;
-  distribution?: string;
-  type?: string;
+  /** `dep_…` id. Required. */
+  deployment: string;
+  /**
+   * Required. Only `click` | `sale` | `purchase` | `install` | `referral`
+   * (plus the raw metric keys) reach the metric tables payouts read; anything
+   * else is recorded with `projected: false` and can never pay anyone.
+   * `"conversion"` is NOT one of them.
+   */
+  type: string;
   source?: string;
-  externalEventId?: string;
-  idempotencyKey?: string;
-  value?: number;
-  currency?: string;
+  /** Minor units (cents) — the field is `value_minor`, not `value`. */
+  valueMinor?: number | null;
+  currency?: string | null;
   quantity?: number;
   occurredAt?: string;
+  /** One of `externalEventId` / `idempotencyKey` is required (ingest identity). */
+  externalEventId?: string;
+  idempotencyKey?: string;
+  /** Free-form — stored verbatim, never key-rewritten. */
   properties?: Record<string, unknown>;
 }
 
@@ -609,8 +755,11 @@ export interface OperationWaitOptions extends RequestOptions {
   pollInterval?: number;
 }
 
+/** An operation id string, or anything carrying one on `.id`. */
+export type OperationRef = string | { id: string };
+
 export interface OperationsClient {
-  retrieve(id: string, options?: RequestOptions): Promise<Operation>;
+  retrieve(operation: OperationRef, options?: RequestOptions): Promise<Operation>;
   list(
     params?: Params<PaginationParams & { subjectType?: string; subjectId?: string; status?: OperationStatus }>,
     options?: RequestOptions,
@@ -618,18 +767,34 @@ export interface OperationsClient {
   /**
    * Poll until the operation is terminal (succeeded|partial|failed|canceled)
    * and return it — does NOT throw on failed operations. Throws
-   * `operation_wait_timeout` when the wait budget elapses.
+   * `operation_wait_timeout` when the wait budget elapses (the message carries
+   * `waiting_reason` when the operation is parked).
+   *
+   * Accepts the id STRING that `launch` returns or the operation object that
+   * `pause`/`resume`/`cancel` return.
    */
-  wait(id: string, options?: OperationWaitOptions): Promise<Operation>;
+  wait(operation: OperationRef, options?: OperationWaitOptions): Promise<Operation>;
+}
+
+export interface WebhookEndpointCreateParams {
+  url: string;
+  /**
+   * Event types to subscribe to. OMITTING THIS (or passing `[]`) subscribes
+   * the endpoint to EVERY public event type.
+   */
+  enabledEvents?: BoominEventType[];
+  description?: string | null;
 }
 
 export interface WebhookEndpointsClient {
-  create(
-    params: Params<{ url: string; enabledEvents?: BoominEventType[]; description?: string }>,
+  /** The response carries `secret` (whsec_…) — revealed on create ONLY. */
+  create(params: Params<WebhookEndpointCreateParams>, options?: RequestOptions): Promise<WebhookEndpoint>;
+  retrieve(id: string, options?: RequestOptions): Promise<WebhookEndpoint>;
+  update(
+    id: string,
+    params: Params<Partial<WebhookEndpointCreateParams> & { status?: "enabled" | "disabled" }>,
     options?: RequestOptions,
   ): Promise<WebhookEndpoint>;
-  retrieve(id: string, options?: RequestOptions): Promise<WebhookEndpoint>;
-  update(id: string, params: Params, options?: RequestOptions): Promise<WebhookEndpoint>;
   list(params?: Params<PaginationParams>, options?: RequestOptions): ListPromise<WebhookEndpoint>;
   /**
    * Installs a fresh signing secret (revealed once in this response); the
@@ -643,15 +808,25 @@ export interface WebhooksClient {
   endpoints: WebhookEndpointsClient;
 }
 
+export interface PayoutPeriodParams {
+  /** `YYYY-MM-DD`. */
+  periodStart: string;
+  /** `YYYY-MM-DD`, exclusive of / after periodStart. */
+  periodEnd: string;
+}
+
 export interface PayoutsClient {
   list(
-    params?: Params<PaginationParams & { status?: string; partner?: string }>,
+    params?: Params<PaginationParams & { status?: string; periodStart?: string; periodEnd?: string }>,
     options?: RequestOptions,
   ): ListPromise<Payout>;
-  /** Run disbursement over eligible payouts (returns batch + operation). */
-  run(params?: Params<{ rail?: string }>, options?: RequestOptions): Promise<PayoutBatch>;
-  /** Export eligible payouts on the csv_batch rail. */
-  exportCsv(params?: Params<{ format?: string }>, options?: RequestOptions): Promise<PayoutBatch>;
+  /**
+   * Recompute the period's payout rows. Both dates are REQUIRED. Returns zero
+   * rows until the brand has at least one active payout rule.
+   */
+  run(params: Params<PayoutPeriodParams>, options?: RequestOptions): Promise<PayoutRun>;
+  /** Build + export a csv_batch over the eligible rows on the csv_batch rail. */
+  exportCsv(params?: Params<Partial<PayoutPeriodParams>>, options?: RequestOptions): Promise<PayoutBatch>;
   /** Stripe Connect payout-account status. */
   connectStatus(params?: Params, options?: RequestOptions): Promise<PayoutConnectStatus>;
   batches: {

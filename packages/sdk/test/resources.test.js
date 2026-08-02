@@ -61,7 +61,9 @@ const CASES = [
   { name: "distributions.retrieve", invoke: (b) => b.distributions.retrieve("dist_1"), method: "GET", path: "/distributions/dist_1" },
   { name: "distributions.list", invoke: (b) => b.distributions.list({ status: "active" }), method: "GET", path: "/distributions?status=active" },
   { name: "distributions.validate", invoke: (b) => b.distributions.validate("dist_1"), method: "POST", path: "/distributions/dist_1/validate", body: {} },
-  { name: "distributions.launch", invoke: (b) => b.distributions.launch("dist_1", { dryRun: true }), method: "POST", path: "/distributions/dist_1/launch", body: { dryRun: true } },
+  // launch takes no body FIELDS; the only key it accepts is idempotency_key,
+  // and the SDK converts the camelCase spelling on the way out.
+  { name: "distributions.launch", invoke: (b) => b.distributions.launch("dist_1", { idempotencyKey: "launch-1" }), method: "POST", path: "/distributions/dist_1/launch", body: { idempotency_key: "launch-1" } },
   { name: "distributions.pause", invoke: (b) => b.distributions.pause("dist_1"), method: "POST", path: "/distributions/dist_1/pause", body: {} },
   { name: "distributions.resume", invoke: (b) => b.distributions.resume("dist_1"), method: "POST", path: "/distributions/dist_1/resume", body: {} },
   { name: "distributions.cancel", invoke: (b) => b.distributions.cancel("dist_1"), method: "POST", path: "/distributions/dist_1/cancel", body: {} },
