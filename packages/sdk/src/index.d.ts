@@ -627,6 +627,11 @@ export interface WebhookEndpointsClient {
   retrieve(id: string, options?: RequestOptions): Promise<WebhookEndpoint>;
   update(id: string, params: Params, options?: RequestOptions): Promise<WebhookEndpoint>;
   list(params?: Params<PaginationParams>, options?: RequestOptions): ListPromise<WebhookEndpoint>;
+  /**
+   * Installs a fresh signing secret (revealed once in this response); the
+   * previous secret stays honored for a rotation overlap window.
+   */
+  rotateSecret(id: string, params?: Params, options?: RequestOptions): Promise<WebhookEndpoint>;
   del(id: string, options?: RequestOptions): Promise<unknown>;
 }
 

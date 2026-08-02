@@ -5,6 +5,8 @@ import { stdin as input, stdout as output } from "node:process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { ApiError } from "./errors.js";
+import { isV1Group, runV1Command } from "./v1.js";
 
 const DEFAULT_APP_API_BASE = "https://api.boomin.ai/v1/app";
 const DEFAULT_PLATFORM_API_BASE = "https://api.boomin.ai/v1/platform";
@@ -94,17 +96,29 @@ const MCP_SKILL_PACKS = {
   },
 };
 
-class ApiError extends Error {
-  constructor(message, details = {}) {
-    super(message);
-    this.name = "ApiError";
-    this.status = details.status;
-    this.code = details.code;
-    this.requiredScope = details.requiredScope;
-    this.suggestedCommand = details.suggestedCommand;
-    this.response = details.response;
-  }
-}
+// ── Platform API v1 scopes (DISTRIBUTION_CORE §4) ─────────────────────────────
+// Issue/validate alongside the legacy scope registry above. Deliberately NOT
+// part of PLATFORM_SCOPES: `platform smoke --all-scopes` executes each legacy
+// scope through /scopes_exec, which does not cover the v1 REST tree.
+const PLATFORM_V1_SCOPES = [
+  { scope: "distributions:read", category: "platform_v1", description: "Read distributions." },
+  { scope: "distributions:write", category: "platform_v1", description: "Create, update, validate, pause, resume, or cancel distributions." },
+  { scope: "distributions:launch", category: "platform_v1", description: "Launch distributions (distinct from distributions:write)." },
+  { scope: "deployments:read", category: "platform_v1", description: "Read deployments and their observed state." },
+  { scope: "enrollments:read", category: "platform_v1", description: "Read program enrollments." },
+  { scope: "enrollments:write", category: "platform_v1", description: "Invite, approve, reject, pause, or resume enrollments." },
+  { scope: "partnerships:read", category: "platform_v1", description: "Read durable partnerships." },
+  { scope: "partnerships:write", category: "platform_v1", description: "Pause, resume, end, or update partnerships." },
+  { scope: "connections:read", category: "platform_v1", description: "Read provider connections and grants." },
+  { scope: "connections:write", category: "platform_v1", description: "Revoke provider connections." },
+  { scope: "performance:read", category: "platform_v1", description: "Read performance summaries." },
+  { scope: "performance:write", category: "platform_v1", description: "Ingest business performance events." },
+  { scope: "operations:read", category: "platform_v1", description: "Read operations (default-granted; the progress surface for every mutation)." },
+  { scope: "payouts:read", category: "platform_v1", description: "Read payouts, batches, and connect status." },
+  { scope: "payouts:write", category: "platform_v1", description: "Run payout computation and CSV exports." },
+  { scope: "partners:read", category: "platform_v1", description: "Read partner identities." },
+  { scope: "handoff:read", category: "platform_v1", description: "Read program handoff configs (v1 tree)." },
+];
 
 function parseArgs(argv) {
   const out = { _: [], origins: [] };
@@ -161,6 +175,33 @@ function parseArgs(argv) {
       "claudeCommand",
       "target",
       "source",
+      // Platform v1 command groups (CLI 0.3.0)
+      "programs",
+      "objective",
+      "description",
+      "spec",
+      "subjects",
+      "budget",
+      "budgetMode",
+      "budgetAsset",
+      "budgetTotal",
+      "email",
+      "partner",
+      "referralCode",
+      "program",
+      "status",
+      "approvalStatus",
+      "limit",
+      "startingAfter",
+      "periodStart",
+      "periodEnd",
+      "out",
+      "url",
+      "events",
+      "metadata",
+      "brand",
+      "distribution",
+      "deployment",
     ].includes(key);
     const value = rawValue ?? (takesValue ? argv[++index] : true);
     if (key === "origin") out.origins.push(String(value));
@@ -557,6 +598,120 @@ Signed handoff lets your logged-in app user click one button while your server s
 `);
     return;
   }
+  if (first === "distribution") {
+    console.log(`Boomin CLI - distributions (Platform v1)
+
+Usage:
+  npx @boomin/cli distribution create --name "Launch" --objective acquisition --programs prog_...
+  npx @boomin/cli distribution list [--status draft|ready|launching|active|paused|...]
+  npx @boomin/cli distribution get <dist_id>
+  npx @boomin/cli distribution validate <dist_id>
+  npx @boomin/cli distribution launch <dist_id> [--no-wait]
+  npx @boomin/cli distribution pause <dist_id> [--no-wait]
+  npx @boomin/cli distribution resume <dist_id> [--no-wait]
+  npx @boomin/cli distribution cancel <dist_id> [--no-wait]
+
+Create flags:
+  --name <text>            Distribution name (required).
+  --objective <text>       awareness|acquisition|launch|conversion|retention|event_promotion|custom.
+  --programs <csv>         Program ids supplying eligible enrollments (prog_...).
+  --description <text>     Optional description.
+  --spec <json>            Deployment plan spec as a JSON string.
+  --budget <json>          {"mode":"funded","asset":"credit","total":10000} (minor units), or:
+  --budget-mode <mode>     none|metered|funded  (+ --budget-asset usd|credit, --budget-total <minor>)
+
+Launch/pause/resume/cancel are async (202 + operation). The CLI polls the
+operation to a terminal status by default; --no-wait returns immediately.
+  --timeout <seconds>      Operation wait budget (default 120).
+  --poll-interval <secs>   Poll interval (default 2).
+
+Auth: --token sk_boomin_live_... or BOOMIN_PLATFORM_TOKEN (needs distributions:*).
+`);
+    return;
+  }
+  if (first === "enrollment") {
+    console.log(`Boomin CLI - enrollments (Platform v1, program-scoped)
+
+Usage:
+  npx @boomin/cli enrollment invite --program prog_... --email partner@example.com [--name "Ada"]
+  npx @boomin/cli enrollment invite --program prog_... --partner ptnr_...
+  npx @boomin/cli enrollment approve <enr_id>
+  npx @boomin/cli enrollment reject <enr_id>
+  npx @boomin/cli enrollment list [--program prog_...] [--status active|paused|archived] [--approval-status pending|approved|rejected]
+  npx @boomin/cli enrollment get <enr_id>
+
+Invite creates the enrollment (payload carries the program) and the durable
+partnership when none exists. Approve/reject only move approval_status;
+rejection is not terminal (re-invite resets it to pending).
+`);
+    return;
+  }
+  if (first === "partnership") {
+    console.log(`Boomin CLI - partnerships (Platform v1)
+
+Usage:
+  npx @boomin/cli partnership list [--status pending|active|paused|ended]
+  npx @boomin/cli partnership get <pship_id>
+  npx @boomin/cli partnership pause <pship_id>
+  npx @boomin/cli partnership resume <pship_id>
+  npx @boomin/cli partnership end <pship_id>
+
+Pause blocks new partner deployments and pauses existing ones; enrollments and
+links are preserved (attribution continues). End is the explicit terminal verb.
+`);
+    return;
+  }
+  if (first === "connection") {
+    console.log(`Boomin CLI - connections (Platform v1)
+
+Usage:
+  npx @boomin/cli connection list
+  npx @boomin/cli connection get <conn_id>
+  npx @boomin/cli connection revoke <conn_id>
+`);
+    return;
+  }
+  if (first === "payout") {
+    console.log(`Boomin CLI - payouts (Platform v1)
+
+Usage:
+  npx @boomin/cli payout list [--status pending|awaiting_account|processing|paid|failed] [--period-start YYYY-MM-DD --period-end YYYY-MM-DD]
+  npx @boomin/cli payout run --period-start YYYY-MM-DD --period-end YYYY-MM-DD
+  npx @boomin/cli payout export [--out payouts.csv] [--period-start YYYY-MM-DD --period-end YYYY-MM-DD]
+  npx @boomin/cli payout connect
+
+run recomputes the period's payout rows; export builds a csv_batch over
+eligible rows and returns (or downloads with --out) the operator CSV;
+connect shows payout rails + the Stripe Connect account rollup.
+`);
+    return;
+  }
+  if (first === "webhook") {
+    console.log(`Boomin CLI - webhook endpoints (Platform v1)
+
+Usage:
+  npx @boomin/cli webhook create --url https://your-app.com/webhooks/boomin [--events distribution.live,payout.settled] [--description "Prod"]
+  npx @boomin/cli webhook list
+  npx @boomin/cli webhook rotate-secret <we_id>
+  npx @boomin/cli webhook delete <we_id>
+
+The signing secret is revealed once on create and rotate-secret. Empty
+--events subscribes the endpoint to all public event types.
+`);
+    return;
+  }
+  if (first === "events") {
+    console.log(`Boomin CLI - events (Platform v1 operational feed)
+
+Usage:
+  npx @boomin/cli events list --type distribution.live
+  npx @boomin/cli events list [--limit 50] [--starting-after <seq-or-evt_id>]
+
+The operational domain-event feed OUT (events:read) — deliberately distinct
+from performance ingestion. Ordered by seq; page with --starting-after.
+`);
+    return;
+  }
   console.log(`Boomin CLI
 
 Usage:
@@ -578,6 +733,15 @@ Usage:
   npx @boomin/cli referral init --framework next --auth custom
   npx @boomin/cli mcp install
   npx @boomin/cli skill install
+
+Platform v1 (distribution infrastructure — see \`help <group>\`):
+  npx @boomin/cli distribution create|list|get|validate|launch|pause|resume|cancel
+  npx @boomin/cli enrollment invite|approve|reject|list|get
+  npx @boomin/cli partnership list|get|pause|resume|end
+  npx @boomin/cli connection list|get|revoke
+  npx @boomin/cli payout list|run|export|connect
+  npx @boomin/cli webhook create|list|delete|rotate-secret
+  npx @boomin/cli events list --type <event.type>
 
 Global flags:
   -h, --help                Show help for a command.
@@ -1394,6 +1558,7 @@ async function doctor(flags = {}) {
   }
 
   const platformToken = config.platformToken || process.env.BOOMIN_PLATFORM_TOKEN;
+  let platformScopes = null;
   if (!platformToken) {
     doctorCheck(checks, "warn", "platform_token", "Platform token", "No platform token configured; server/agent Platform API smoke is skipped.", {
       fix: "npx @boomin/cli token create --name \"Agent\" --scopes org:read,units:read --save",
@@ -1405,6 +1570,7 @@ async function doctor(flags = {}) {
         platformToken,
         body: { token: platformToken },
       });
+      platformScopes = Array.isArray(smoke.scopes) ? smoke.scopes.map(String) : [];
       doctorCheck(checks, "pass", "platform_token", "Platform token", "Read-only platform smoke succeeded.", {
         details: { org: smoke.org, scopes: smoke.scopes },
       });
@@ -1415,6 +1581,106 @@ async function doctor(flags = {}) {
           ? "Check --platform-api-base or verify the Platform API is deployed."
           : "Create a fresh token with `npx @boomin/cli token create --name \"Agent\" --scopes org:read,units:read --save`.",
       });
+    }
+  }
+
+  // ── Platform v1 surface (CLI 0.3.0) ─────────────────────────────────────────
+  const v1Get = async (route) => {
+    const response = await fetch(`${executeApiBase}${route}`, {
+      headers: { Authorization: `Bearer ${platformToken}`, Accept: "application/json" },
+    });
+    const data = await response.json().catch(() => null);
+    return { status: response.status, data };
+  };
+  const v1ErrorCode = (result) => result?.data?.error?.code || null;
+
+  // v1 reachability: an unauthenticated probe must answer with the typed
+  // auth-first envelope (401 {error:{code:'platform_token_required'}}).
+  try {
+    const probe = await fetch(`${executeApiBase}/distributions`);
+    const probeBody = await probe.json().catch(() => null);
+    if (probe.status === 401 && probeBody?.error?.code === "platform_token_required") {
+      doctorCheck(checks, "pass", "platform_v1", "Platform v1 API", "v1 REST tree is reachable (auth-first envelope confirmed).");
+    } else if (probe.ok) {
+      doctorCheck(checks, "pass", "platform_v1", "Platform v1 API", "v1 REST tree is reachable.");
+    } else {
+      doctorCheck(checks, "fail", "platform_v1", "Platform v1 API", `Unexpected v1 response: HTTP ${probe.status}.`, {
+        fix: "Check --platform-api-base or verify the v1 Platform API is deployed.",
+        details: { status: probe.status, body: probeBody },
+      });
+    }
+  } catch (error) {
+    doctorCheck(checks, "fail", "platform_v1", "Platform v1 API", error.message, {
+      fix: "Check --platform-api-base or try again when the Platform API is reachable.",
+    });
+  }
+
+  // Launch readiness: token must carry the distribution scopes
+  // (operations:read is default-granted server-side).
+  if (!platformScopes) {
+    doctorCheck(checks, "skip", "launch_readiness", "Launch readiness", "Skipped because no valid platform token is configured.", {
+      fix: "npx @boomin/cli token create --name \"Launcher\" --scopes org:read,distributions:read,distributions:write,distributions:launch --save",
+    });
+  } else {
+    const requiredLaunchScopes = ["distributions:read", "distributions:write", "distributions:launch"];
+    const missingLaunchScopes = requiredLaunchScopes.filter((scope) => !platformScopes.includes(scope));
+    if (missingLaunchScopes.length === 0) {
+      doctorCheck(checks, "pass", "launch_readiness", "Launch readiness", "Token can create, validate, and launch distributions.");
+    } else {
+      doctorCheck(checks, "warn", "launch_readiness", "Launch readiness", `Token is missing: ${missingLaunchScopes.join(", ")}.`, {
+        fix: `npx @boomin/cli token create --name "Launcher" --scopes org:read,${requiredLaunchScopes.join(",")} --save`,
+        details: { missing: missingLaunchScopes },
+      });
+    }
+  }
+
+  // Webhook endpoint presence: launches emit domain events nobody hears
+  // without at least one enabled endpoint.
+  if (!platformToken) {
+    doctorCheck(checks, "skip", "webhook_endpoints", "Webhook endpoints", "Skipped because no platform token is configured.");
+  } else {
+    const endpoints = await v1Get("/webhook_endpoints?limit=1").catch((error) => ({ status: 0, data: null, error }));
+    if (endpoints.status === 200 && Array.isArray(endpoints.data?.data)) {
+      if (endpoints.data.data.length > 0) {
+        doctorCheck(checks, "pass", "webhook_endpoints", "Webhook endpoints", "At least one webhook endpoint is configured.");
+      } else {
+        doctorCheck(checks, "warn", "webhook_endpoints", "Webhook endpoints", "No webhook endpoints are configured; platform events will not be delivered.", {
+          fix: "npx @boomin/cli webhook create --url https://your-app.com/webhooks/boomin",
+        });
+      }
+    } else if (v1ErrorCode(endpoints) === "missing_scope") {
+      doctorCheck(checks, "skip", "webhook_endpoints", "Webhook endpoints", "Token lacks webhooks:read; endpoint presence not checked.", {
+        fix: "Add webhooks:read,webhooks:write to the token scopes.",
+      });
+    } else {
+      doctorCheck(checks, "fail", "webhook_endpoints", "Webhook endpoints", `Could not list webhook endpoints (HTTP ${endpoints.status}${v1ErrorCode(endpoints) ? `, ${v1ErrorCode(endpoints)}` : ""}).`);
+    }
+  }
+
+  // Wallet / billing readiness: payout rails + Stripe Connect rollup — can
+  // value actually leave the platform once distributions perform?
+  if (!platformToken) {
+    doctorCheck(checks, "skip", "billing_readiness", "Wallet/billing readiness", "Skipped because no platform token is configured.");
+  } else {
+    const connect = await v1Get("/payouts/connect_status").catch((error) => ({ status: 0, data: null, error }));
+    if (connect.status === 200 && connect.data) {
+      const rails = Array.isArray(connect.data.rails) ? connect.data.rails : [];
+      const stripeConfigured = Boolean(connect.data.stripe?.configured);
+      if (rails.length > 0 || stripeConfigured) {
+        doctorCheck(checks, "pass", "billing_readiness", "Wallet/billing readiness", `Disbursement ready: ${rails.length} payout rail(s)${stripeConfigured ? ", Stripe configured" : ""}.`, {
+          details: { rails: rails.length, stripeConfigured, partnerAccounts: connect.data.stripe?.partner_accounts },
+        });
+      } else {
+        doctorCheck(checks, "warn", "billing_readiness", "Wallet/billing readiness", "No payout rails configured and Stripe is not configured; partner payouts cannot disburse.", {
+          fix: "Configure a payout rail (csv_batch or stripe_connect) in the Boomin console, or run `npx @boomin/cli payout connect` to inspect.",
+        });
+      }
+    } else if (v1ErrorCode(connect) === "missing_scope") {
+      doctorCheck(checks, "skip", "billing_readiness", "Wallet/billing readiness", "Token lacks payouts:read; disbursement readiness not checked.", {
+        fix: "Add payouts:read to the token scopes.",
+      });
+    } else {
+      doctorCheck(checks, "fail", "billing_readiness", "Wallet/billing readiness", `Could not read payout connect status (HTTP ${connect.status}${v1ErrorCode(connect) ? `, ${v1ErrorCode(connect)}` : ""}).`);
     }
   }
 
@@ -1511,8 +1777,12 @@ function parseScopes(value) {
     .filter(Boolean);
 }
 
+function allKnownScopes() {
+  return [...PLATFORM_SCOPES, ...PLATFORM_V1_SCOPES];
+}
+
 function validateLocalScopes(scopes) {
-  const allowed = new Set(PLATFORM_SCOPES.map((item) => item.scope));
+  const allowed = new Set(allKnownScopes().map((item) => item.scope));
   return scopes.filter((scope) => !allowed.has(scope));
 }
 
@@ -1540,7 +1810,7 @@ function scopesForMcpPacks(packs) {
 async function printScopes(flags = {}) {
   const scopeName = flags._[0] === "explain" ? flags._[1] : null;
   if (scopeName) {
-    const found = PLATFORM_SCOPES.find((item) => item.scope === scopeName);
+    const found = allKnownScopes().find((item) => item.scope === scopeName);
     if (!found) throw new Error(`Unknown scope: ${scopeName}`);
     if (flags.json) printJson(found);
     else {
@@ -1551,11 +1821,11 @@ async function printScopes(flags = {}) {
     return;
   }
   if (flags.json) {
-    printJson({ scopes: PLATFORM_SCOPES });
+    printJson({ scopes: allKnownScopes() });
     return;
   }
   const groups = new Map();
-  for (const item of PLATFORM_SCOPES) {
+  for (const item of allKnownScopes()) {
     if (!groups.has(item.category)) groups.set(item.category, []);
     groups.get(item.category).push(item);
   }
@@ -2657,6 +2927,17 @@ async function main() {
     else await skillCommand(subcommand, flags);
   } else if (command === "mcp") {
     await mcpCommand(flags);
+  } else if (isV1Group(command)) {
+    const subcommand = flags._.shift();
+    if (!subcommand) {
+      printHelp([command]);
+      return;
+    }
+    const token = await resolvePlatformToken(flags);
+    await runV1Command(command, subcommand, flags, {
+      token,
+      platformApiBase: platformApiBase(flags),
+    });
   } else {
     console.error(`Unknown command: ${command}`);
     printHelp();

@@ -1,7 +1,7 @@
 {
   "name": "@boomin/cli",
-  "version": "0.2.0",
-  "description": "Boomin CLI for setup, handoff scaffolding, tokens, scopes, and smoke tests.",
+  "version": "0.3.0",
+  "description": "Boomin CLI for setup, handoff scaffolding, tokens, scopes, smoke tests, and the Platform v1 distribution tree.",
   "type": "module",
   "bin": {
     "boomin": "src/cli.js"
@@ -25,7 +25,8 @@
     "README.md"
   ],
   "scripts": {
-    "build": "node --check src/cli.js",
+    "build": "node --check src/cli.js && node --check src/v1.js && node --check src/errors.js",
+    "test": "node --test 'test/*.test.js'",
     "pack:dry": "npm pack --dry-run"
   },
   "keywords": [
@@ -36,5 +37,8 @@
     "agents"
   ],
   "author": "Boomin",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@boomin/sdk": "^1.0.0-beta.1"
+  }
 }
