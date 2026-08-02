@@ -69,6 +69,9 @@ const CASES = [
   // deployments
   { name: "deployments.retrieve", invoke: (b) => b.deployments.retrieve("dep_1"), method: "GET", path: "/deployments/dep_1" },
   { name: "deployments.list", invoke: (b) => b.deployments.list({ distribution: "dist_1" }), method: "GET", path: "/deployments?distribution=dist_1" },
+  { name: "deployments.pause", invoke: (b) => b.deployments.pause("dep_1"), method: "POST", path: "/deployments/dep_1/pause", body: {} },
+  { name: "deployments.resume", invoke: (b) => b.deployments.resume("dep_1"), method: "POST", path: "/deployments/dep_1/resume", body: {} },
+  { name: "deployments.cancel", invoke: (b) => b.deployments.cancel("dep_1"), method: "POST", path: "/deployments/dep_1/cancel", body: {} },
 
   // connections
   { name: "connections.list", invoke: (b) => b.connections.list({ provider: "instagram" }), method: "GET", path: "/connections?provider=instagram" },

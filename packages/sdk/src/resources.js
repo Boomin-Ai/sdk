@@ -230,6 +230,19 @@ export class DeploymentsClient extends ResourceClient {
   list(params, options) {
     return this._list("/deployments", params, options);
   }
+
+  pause(id, params, options) {
+    return this._http.post(`/deployments/${pathParam(id, "id")}/pause`, params ?? {}, options);
+  }
+
+  /** `resume` is the canonical verb on every surface — never `unpause`. */
+  resume(id, params, options) {
+    return this._http.post(`/deployments/${pathParam(id, "id")}/resume`, params ?? {}, options);
+  }
+
+  cancel(id, params, options) {
+    return this._http.post(`/deployments/${pathParam(id, "id")}/cancel`, params ?? {}, options);
+  }
 }
 
 export class ConnectionsClient extends ResourceClient {
