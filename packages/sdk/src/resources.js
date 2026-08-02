@@ -321,6 +321,16 @@ class WebhookEndpointsClient extends ResourceClient {
     return this._list("/webhook_endpoints", params, options);
   }
 
+  /** Installs a fresh signing secret (revealed once in this response); the
+   * previous secret stays honored for a rotation overlap window. */
+  rotateSecret(id, params, options) {
+    return this._http.post(
+      `/webhook_endpoints/${pathParam(id, "id")}/rotate_secret`,
+      params ?? {},
+      options,
+    );
+  }
+
   del(id, options) {
     return this._http.delete(`/webhook_endpoints/${pathParam(id, "id")}`, options);
   }
