@@ -1,0 +1,61 @@
+{
+  "name": "@boomin/sdk",
+  "version": "1.0.0-beta.1",
+  "description": "Boomin platform SDK — programmable distribution infrastructure (programs, partnerships, enrollments, distributions, deployments, performance, payouts).",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Boomin-Ai/sdk.git",
+    "directory": "packages/sdk"
+  },
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js",
+      "default": "./src/index.js"
+    },
+    "./webhooks": {
+      "types": "./src/webhooks.d.ts",
+      "import": "./src/webhooks.js",
+      "default": "./src/webhooks.js"
+    },
+    "./errors": {
+      "types": "./src/errors.d.ts",
+      "import": "./src/errors.js",
+      "default": "./src/errors.js"
+    }
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node --check src/index.js && node --check src/core.js && node --check src/errors.js && node --check src/resources.js && node --check src/webhooks.js",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test 'test/*.test.js'",
+    "pack:dry": "npm pack --dry-run"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  },
+  "keywords": [
+    "boomin",
+    "distribution",
+    "partnerships",
+    "affiliate",
+    "referral",
+    "payouts",
+    "api",
+    "sdk"
+  ],
+  "author": "Boomin",
+  "license": "MIT"
+}
