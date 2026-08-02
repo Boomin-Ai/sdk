@@ -556,6 +556,10 @@ export interface DeploymentsClient {
     >,
     options?: RequestOptions,
   ): ListPromise<Deployment>;
+  pause(id: string, params?: Params, options?: RequestOptions): Promise<Deployment & { operation: string }>;
+  /** `resume` is the canonical verb on every surface — never `unpause`. */
+  resume(id: string, params?: Params, options?: RequestOptions): Promise<Deployment & { operation: string }>;
+  cancel(id: string, params?: Params, options?: RequestOptions): Promise<Deployment & { operation: string }>;
 }
 
 export interface ConnectionsClient {
