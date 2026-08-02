@@ -577,13 +577,14 @@ export interface ProgramsClient {
 
 export interface PartnersClient {
   retrieve(id: string, options?: RequestOptions): Promise<Partner>;
-  list(params?: Params<PaginationParams>, options?: RequestOptions): ListPromise<Partner>;
+  /** `email` is an exact, case-insensitive match. */
+  list(params?: Params<PaginationParams & { email?: string }>, options?: RequestOptions): ListPromise<Partner>;
 }
 
 export interface PartnershipsClient {
   retrieve(id: string, options?: RequestOptions): Promise<Partnership>;
   list(
-    params?: Params<PaginationParams & { partner?: string; status?: PartnershipStatus }>,
+    params?: Params<PaginationParams & { status?: PartnershipStatus }>,
     options?: RequestOptions,
   ): ListPromise<Partnership>;
   pause(id: string, params?: Params, options?: RequestOptions): Promise<Partnership>;
@@ -618,10 +619,8 @@ export interface EnrollmentsClient {
     params?: Params<
       PaginationParams & {
         program?: string;
-        partnership?: string;
         approvalStatus?: EnrollmentApprovalStatus;
         status?: EnrollmentStatus;
-        // (list filters are query params: program, status, approval_status)
       }
     >,
     options?: RequestOptions,
@@ -679,14 +678,7 @@ export interface DistributionsClient {
 export interface DeploymentsClient {
   retrieve(id: string, options?: RequestOptions): Promise<Deployment>;
   list(
-    params?: Params<
-      PaginationParams & {
-        distribution?: string;
-        partnership?: string;
-        mode?: DeploymentMode;
-        status?: DeploymentDesiredStatus;
-      }
-    >,
+    params?: Params<PaginationParams & { distribution?: string }>,
     options?: RequestOptions,
   ): ListPromise<Deployment>;
   pause(id: string, params?: Params, options?: RequestOptions): Promise<Deployment & { operation: string }>;
@@ -697,10 +689,7 @@ export interface DeploymentsClient {
 
 export interface ConnectionsClient {
   retrieve(id: string, options?: RequestOptions): Promise<Connection>;
-  list(
-    params?: Params<PaginationParams & { provider?: string; kind?: ConnectionKind; partner?: string }>,
-    options?: RequestOptions,
-  ): ListPromise<Connection>;
+  list(params?: Params<PaginationParams>, options?: RequestOptions): ListPromise<Connection>;
   revoke(id: string, params?: Params, options?: RequestOptions): Promise<Connection>;
 }
 
@@ -732,8 +721,11 @@ export interface PerformanceEventCreateParams {
 }
 
 export interface PerformanceClient {
-  /** Rollup read (performance:read). */
-  summary(params?: Params, options?: RequestOptions): Promise<PerformanceSummary>;
+  /** Rollup read (performance:read), optionally scoped to one distribution or deployment. */
+  summary(
+    params?: Params<{ distribution?: string; deployment?: string }>,
+    options?: RequestOptions,
+  ): Promise<PerformanceSummary>;
   /** Business measurement ingestion IN (performance:write). */
   events: {
     create(params: Params<PerformanceEventCreateParams>, options?: RequestOptions): Promise<PerformanceEvent>;
