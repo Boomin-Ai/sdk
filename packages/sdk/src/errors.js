@@ -18,7 +18,13 @@ export class BoominError extends Error {
     this.requestId = details.requestId ?? null;
     /** Offending parameter, when the API names one. */
     this.param = details.param ?? null;
-    /** Raw `error` object from the response body, when one was parseable. */
+    /**
+     * Raw `error` object from the response body, when one was parseable.
+     *
+     * Deliberately NOT camelCased: `raw` means raw. Every field worth reading is
+     * already lifted onto this error as a camelCase property (`code`, `status`,
+     * `requestId`, `param`).
+     */
     this.raw = details.raw ?? null;
     if (details.cause !== undefined) this.cause = details.cause;
   }
@@ -42,6 +48,36 @@ export class BandLimitReachedError extends InvalidRequestError {}
 
 /** Distinctly surfaced typed code: a funded action is waiting on wallet funds. */
 export class FundingRequiredError extends InvalidRequestError {}
+
+/**
+ * Raised CLIENT-SIDE, before any request goes out, when a params object spells
+ * the same API field two ways — `{ enabledEvents: A, enabled_events: B }`.
+ *
+ * Silently preferring one would repeat the exact defect this SDK's casing work
+ * exists to eliminate: ambiguous caller intent resolved out of sight. Explicit
+ * snake_case wins only when it is the SOLE spelling supplied.
+ *
+ * The identical rule runs on DESERIALIZATION (`direction: "response"`): a
+ * response carrying both spellings of one field is ambiguous, and picking a
+ * winner there is the same sin with the server as the author.
+ *
+ * It extends InvalidRequestError on purpose: an existing
+ * `catch (e) { if (e instanceof InvalidRequestError) ... }` keeps working, and
+ * `e.code === "conflicting_parameters"` names the precise fault — the same
+ * pattern BandLimitReachedError and FundingRequiredError already use. `status`
+ * stays null because no HTTP request was ever made.
+ */
+export class ConflictingParametersError extends InvalidRequestError {
+  constructor(message, details = {}) {
+    super(message, { code: "conflicting_parameters", ...details });
+    /** The camelCase spelling that collided. */
+    this.param = details.param ?? null;
+    /** Its snake_case twin, at the same path. */
+    this.conflictsWith = details.conflictsWith ?? null;
+    /** "request" (nothing was sent) or "response" (the API returned both). */
+    this.direction = details.direction ?? "request";
+  }
+}
 
 /** Webhook signature verification failure (constructEvent). */
 export class WebhookSignatureVerificationError extends BoominError {

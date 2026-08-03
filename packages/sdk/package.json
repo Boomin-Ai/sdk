@@ -38,7 +38,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "node --check src/index.js && node --check src/core.js && node --check src/errors.js && node --check src/resources.js && node --check src/webhooks.js",
+    "build": "node --check src/index.js && node --check src/core.js && node --check src/casing.js && node --check src/errors.js && node --check src/resources.js && node --check src/webhooks.js",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test 'test/*.test.js'",
     "pack:dry": "npm pack --dry-run"

@@ -8,11 +8,31 @@
  * - mutations are POSTs (POST-update API) and auto-carry an Idempotency-Key.
  */
 
-import { BoominError } from "./errors.js";
+import { BoominError, InvalidRequestError } from "./errors.js";
 import { makeListPromise, pathParam } from "./core.js";
 
 const TERMINAL_OPERATION_STATUSES = new Set(["succeeded", "partial", "failed", "canceled"]);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Accept either an operation id string or anything carrying one on `.id`.
+ *
+ * `distributions.launch` resolves `{ distribution, status, operation }` where
+ * BOTH refs are id STRINGS — but `pause`/`resume`/`cancel` resolve a full
+ * object with `operation` alongside, and a caller who already holds an
+ * Operation should not have to unwrap it. Forgiving both readings costs one
+ * function and removes the single most-copied broken line in the docs.
+ */
+function operationRef(value) {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && typeof value.id === "string") return value.id;
+  throw new InvalidRequestError(
+    "An operation id is required: pass the `operation` from a launch/pause/resume/cancel " +
+      "response (an id string) or an operation object. " +
+      `Got ${value === null ? "null" : typeof value}.`,
+    { code: "invalid_request" },
+  );
+}
 
 class ResourceClient {
   constructor(http) {
@@ -29,9 +49,11 @@ class ResourceClient {
 
 /** Nested collection under /programs/:id (requirements, tiers). */
 class ProgramSubcollection extends ResourceClient {
-  constructor(http, segment) {
+  /** @param {string} shape REQUEST_FIELD_MAP prefix (see casing.js). */
+  constructor(http, segment, shape) {
     super(http);
     this._segment = segment;
+    this._shape = shape;
   }
 
   _base(programId) {
@@ -39,7 +61,7 @@ class ProgramSubcollection extends ResourceClient {
   }
 
   create(programId, params, options) {
-    return this._http.post(this._base(programId), params, options);
+    return this._http.post(this._base(programId), params, options, `programs.${this._shape}.create`);
   }
 
   retrieve(programId, id, options) {
@@ -47,7 +69,12 @@ class ProgramSubcollection extends ResourceClient {
   }
 
   update(programId, id, params, options) {
-    return this._http.post(`${this._base(programId)}/${pathParam(id, "id")}`, params, options);
+    return this._http.post(
+      `${this._base(programId)}/${pathParam(id, "id")}`,
+      params,
+      options,
+      `programs.${this._shape}.update`,
+    );
   }
 
   list(programId, params, options) {
@@ -61,9 +88,11 @@ class ProgramSubcollection extends ResourceClient {
 
 /** Singleton config nested under /programs/:id (connect_config, handoff_config). */
 class ProgramConfig extends ResourceClient {
-  constructor(http, segment) {
+  /** @param {string} shape REQUEST_FIELD_MAP prefix (see casing.js). */
+  constructor(http, segment, shape) {
     super(http);
     this._segment = segment;
+    this._shape = shape;
   }
 
   retrieve(programId, options) {
@@ -79,6 +108,7 @@ class ProgramConfig extends ResourceClient {
       `/programs/${pathParam(programId, "programId")}/${this._segment}`,
       params,
       options,
+      `programs.${this._shape}.update`,
     );
   }
 }
@@ -86,14 +116,14 @@ class ProgramConfig extends ResourceClient {
 export class ProgramsClient extends ResourceClient {
   constructor(http) {
     super(http);
-    this.requirements = new ProgramSubcollection(http, "requirements");
-    this.tiers = new ProgramSubcollection(http, "tiers");
-    this.connectConfig = new ProgramConfig(http, "connect_config");
-    this.handoffConfig = new ProgramConfig(http, "handoff_config");
+    this.requirements = new ProgramSubcollection(http, "requirements", "requirements");
+    this.tiers = new ProgramSubcollection(http, "tiers", "tiers");
+    this.connectConfig = new ProgramConfig(http, "connect_config", "connectConfig");
+    this.handoffConfig = new ProgramConfig(http, "handoff_config", "handoffConfig");
   }
 
   create(params, options) {
-    return this._http.post("/programs", params, options);
+    return this._http.post("/programs", params, options, "programs.create");
   }
 
   retrieve(id, options) {
@@ -101,7 +131,7 @@ export class ProgramsClient extends ResourceClient {
   }
 
   update(id, params, options) {
-    return this._http.post(`/programs/${pathParam(id, "id")}`, params, options);
+    return this._http.post(`/programs/${pathParam(id, "id")}`, params, options, "programs.update");
   }
 
   list(params, options) {
@@ -141,14 +171,19 @@ export class PartnershipsClient extends ResourceClient {
   }
 
   updatePermissions(id, params, options) {
-    return this._http.post(`/partnerships/${pathParam(id, "id")}/permissions`, params, options);
+    return this._http.post(
+      `/partnerships/${pathParam(id, "id")}/permissions`,
+      params,
+      options,
+      "partnerships.updatePermissions",
+    );
   }
 }
 
 export class EnrollmentsClient extends ResourceClient {
   /** Invite: creates the enrollment (payload carries `program`). */
   create(params, options) {
-    return this._http.post("/enrollments", params, options);
+    return this._http.post("/enrollments", params, options, "enrollments.create");
   }
 
   retrieve(id, options) {
@@ -180,7 +215,7 @@ export class EnrollmentsClient extends ResourceClient {
 export class DistributionsClient extends ResourceClient {
   /** Creates a distribution in `draft`. */
   create(params, options) {
-    return this._http.post("/distributions", params, options);
+    return this._http.post("/distributions", params, options, "distributions.create");
   }
 
   retrieve(id, options) {
@@ -189,7 +224,7 @@ export class DistributionsClient extends ResourceClient {
 
   /** Allowed in draft|ready; any update invalidates validation (back to draft). */
   update(id, params, options) {
-    return this._http.post(`/distributions/${pathParam(id, "id")}`, params, options);
+    return this._http.post(`/distributions/${pathParam(id, "id")}`, params, options, "distributions.update");
   }
 
   list(params, options) {
@@ -262,7 +297,7 @@ export class ConnectionsClient extends ResourceClient {
 class PerformanceEventsClient extends ResourceClient {
   /** Business measurement ingestion (performance:write) — events IN. */
   create(params, options) {
-    return this._http.post("/performance/events", params, options);
+    return this._http.post("/performance/events", params, options, "performance.events.create");
   }
 }
 
@@ -285,7 +320,9 @@ export class EventsClient extends ResourceClient {
 }
 
 export class OperationsClient extends ResourceClient {
-  retrieve(id, options) {
+  /** Accepts an operation id string or an operation object. */
+  retrieve(idOrOperation, options) {
+    const id = operationRef(idOrOperation);
     return this._http.get(`/operations/${pathParam(id, "id")}`, undefined, options);
   }
 
@@ -298,17 +335,27 @@ export class OperationsClient extends ResourceClient {
    * (succeeded | partial | failed | canceled) and return it — inspect
    * `operation.status` yourself; wait() does not throw on failed operations.
    * Throws BoominError code `operation_wait_timeout` when `timeout` elapses.
+   *
+   * Accepts an operation id string OR an operation object, because `launch`
+   * hands back an id string while `pause`/`resume`/`cancel` hand back an
+   * object — both readings must work.
    */
-  async wait(id, { timeout = 60000, pollInterval = 1000, ...options } = {}) {
+  async wait(idOrOperation, { timeout = 60000, pollInterval = 1000, ...options } = {}) {
+    const id = operationRef(idOrOperation);
     const startedAt = Date.now();
     for (;;) {
       const operation = await this.retrieve(id, options);
       if (operation && TERMINAL_OPERATION_STATUSES.has(operation.status)) return operation;
       const elapsed = Date.now() - startedAt;
       if (elapsed + pollInterval > timeout) {
+        // `waiting_reason` is the whole diagnosis when an operation parks
+        // (funding_required, provider_review, …) — a timeout that hides it
+        // sends the caller looking in the wrong place entirely.
+        const waitingReason = operation?.waitingReason ?? operation?.waiting_reason;
+        const reason = waitingReason ? ` (${waitingReason})` : "";
         throw new BoominError(
           `Operation ${id} did not reach a terminal status within ${timeout}ms ` +
-            `(last status: ${operation?.status ?? "unknown"}).`,
+            `(last status: ${operation?.status ?? "unknown"}${reason}).`,
           { code: "operation_wait_timeout" },
         );
       }
@@ -317,17 +364,45 @@ export class OperationsClient extends ResourceClient {
   }
 }
 
+/**
+ * `webhook_endpoints` is the ONE v1 family whose single-object responses come
+ * wrapped as `{ webhook_endpoint: {...} }` while every other resource returns
+ * the object bare. Unwrap it here so the client is uniform — otherwise the
+ * documented `const { secret } = await endpoints.create(...)` yields undefined,
+ * and since the signing secret is revealed exactly once, it is then
+ * unrecoverable without a rotation the caller does not know they need.
+ *
+ * Reads `webhookEndpoint` (the converted default) and `webhook_endpoint` (raw
+ * mode), and tolerates a bare object so an un-wrapping API stays compatible.
+ */
+const unwrapEndpoint = (response) =>
+  (response &&
+    typeof response === "object" &&
+    (response.webhookEndpoint ?? response.webhook_endpoint)) ||
+  response;
+
 class WebhookEndpointsClient extends ResourceClient {
-  create(params, options) {
-    return this._http.post("/webhook_endpoints", params, options);
+  async create(params, options) {
+    return unwrapEndpoint(
+      await this._http.post("/webhook_endpoints", params, options, "webhooks.endpoints.create"),
+    );
   }
 
-  retrieve(id, options) {
-    return this._http.get(`/webhook_endpoints/${pathParam(id, "id")}`, undefined, options);
+  async retrieve(id, options) {
+    return unwrapEndpoint(
+      await this._http.get(`/webhook_endpoints/${pathParam(id, "id")}`, undefined, options),
+    );
   }
 
-  update(id, params, options) {
-    return this._http.post(`/webhook_endpoints/${pathParam(id, "id")}`, params, options);
+  async update(id, params, options) {
+    return unwrapEndpoint(
+      await this._http.post(
+        `/webhook_endpoints/${pathParam(id, "id")}`,
+        params,
+        options,
+        "webhooks.endpoints.update",
+      ),
+    );
   }
 
   list(params, options) {
@@ -336,11 +411,13 @@ class WebhookEndpointsClient extends ResourceClient {
 
   /** Installs a fresh signing secret (revealed once in this response); the
    * previous secret stays honored for a rotation overlap window. */
-  rotateSecret(id, params, options) {
-    return this._http.post(
-      `/webhook_endpoints/${pathParam(id, "id")}/rotate_secret`,
-      params ?? {},
-      options,
+  async rotateSecret(id, params, options) {
+    return unwrapEndpoint(
+      await this._http.post(
+        `/webhook_endpoints/${pathParam(id, "id")}/rotate_secret`,
+        params ?? {},
+        options,
+      ),
     );
   }
 
@@ -378,12 +455,12 @@ export class PayoutsClient extends ResourceClient {
 
   /** Run disbursement over eligible payouts — returns a batch + operation. */
   run(params, options) {
-    return this._http.post("/payouts/run", params ?? {}, options);
+    return this._http.post("/payouts/run", params ?? {}, options, "payouts.run");
   }
 
   /** Export eligible payouts on the csv_batch rail. */
   exportCsv(params, options) {
-    return this._http.post("/payouts/export_csv", params ?? {}, options);
+    return this._http.post("/payouts/export_csv", params ?? {}, options, "payouts.exportCsv");
   }
 
   /** Stripe Connect payout-account status for the brand's partners. */

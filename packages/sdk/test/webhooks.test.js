@@ -149,3 +149,26 @@ test("rejects a pre-parsed (object) payload with a helpful message", async () =>
     (err) => /raw request body/.test(err.message),
   );
 });
+
+test("a verified event is camelCased like every other SDK return value", async () => {
+  const payload = JSON.stringify({
+    id: "evt_1",
+    type: "payout.settled",
+    created_at: "2026-08-02T00:00:00Z",
+    data: { object: { id: "po_1", amount_cents: 4999, metadata: { orderId: "1001" } } },
+  });
+  const header = await makeHeader({ payload });
+  const event = await constructEvent(payload, header, SECRET);
+  assert.equal(event.createdAt, "2026-08-02T00:00:00Z");
+  assert.equal(event.data.object.amountCents, 4999);
+  // Customer-owned keys round-trip byte-identical.
+  assert.deepEqual(event.data.object.metadata, { orderId: "1001" });
+});
+
+test("constructEvent({ raw: true }) returns the wire payload untouched", async () => {
+  const payload = JSON.stringify({ id: "evt_1", created_at: "t" });
+  const header = await makeHeader({ payload });
+  const event = await constructEvent(payload, header, SECRET, { raw: true });
+  assert.equal(event.created_at, "t");
+  assert.equal(event.createdAt, undefined);
+});

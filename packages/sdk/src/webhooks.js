@@ -7,6 +7,7 @@
  * the receiving side may equally pass an array of candidate secrets.
  */
 
+import { camelCaseResponse } from "./casing.js";
 import { WebhookSignatureVerificationError } from "./errors.js";
 
 export const DEFAULT_TOLERANCE_SECONDS = 300;
@@ -79,10 +80,13 @@ async function computeHmacHex(secret, message) {
  * @param {string} sigHeader The `Boomin-Signature` header value.
  * @param {string | string[]} secret Endpoint signing secret(s) — pass an array
  *   during secret rotation to accept either secret.
- * @param {{ tolerance?: number, now?: number }} [options] `tolerance` is the max
- *   allowed signature age in seconds (default 300); `now` overrides the clock
- *   (unix seconds) for testing.
- * @returns {Promise<object>} The JSON-parsed event.
+ * @param {{ tolerance?: number, now?: number, raw?: boolean }} [options]
+ *   `tolerance` is the max allowed signature age in seconds (default 300);
+ *   `now` overrides the clock (unix seconds) for testing; `raw: true` returns
+ *   the wire's snake_case object instead of the camelCase one.
+ * @returns {Promise<object>} The verified event, camelCased like every other
+ *   value the SDK returns — `event.data.object.valueMinor`, not `value_minor`.
+ *   Customer-owned blobs (metadata/properties/spec/…) keep their keys verbatim.
  */
 export async function constructEvent(payload, sigHeader, secret, options = {}) {
   const payloadString = toPayloadString(payload);
@@ -142,7 +146,10 @@ export async function constructEvent(payload, sigHeader, secret, options = {}) {
   }
 
   try {
-    return JSON.parse(payloadString);
+    const parsed = JSON.parse(payloadString);
+    // Signature verification is over the RAW bytes above; casing happens only
+    // after the payload is proven authentic, and only to keys.
+    return options.raw === true ? parsed : camelCaseResponse(parsed);
   } catch {
     throw new WebhookSignatureVerificationError(
       "Webhook signature verified but the payload is not valid JSON.",

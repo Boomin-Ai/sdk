@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { createClient } from "./helpers.js";
 
+// The WIRE envelope is snake_case; the SDK hands back `hasMore`.
 const page = (ids, hasMore) => ({
   status: 200,
   body: { object: "list", data: ids.map((id) => ({ id })), has_more: hasMore },
@@ -12,7 +13,8 @@ test("awaiting a list resolves a single page envelope", async () => {
   const { boomin, calls } = createClient([page(["ptr_1", "ptr_2"], true)]);
   const result = await boomin.partners.list({ limit: 2 });
   assert.equal(result.object, "list");
-  assert.equal(result.has_more, true);
+  assert.equal(result.hasMore, true, "the wire's has_more is handed back as hasMore");
+  assert.equal(result.has_more, undefined, "the snake_case spelling is gone from the result");
   assert.deepEqual(result.data.map((d) => d.id), ["ptr_1", "ptr_2"]);
   assert.equal(calls.length, 1, "awaiting must fetch exactly one page");
 });
@@ -37,7 +39,7 @@ test("for await auto-paginates across pages via starting_after", async () => {
   assert.match(urls[2], /program=prog_1/);
 });
 
-test("iteration stops immediately when has_more is false", async () => {
+test("iteration stops immediately when hasMore is false", async () => {
   const { boomin, calls } = createClient([page(["only"], false)]);
   const seen = [];
   for await (const item of boomin.events.list({ type: "distribution.live" })) seen.push(item.id);

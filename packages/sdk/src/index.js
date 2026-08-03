@@ -6,11 +6,13 @@
  *
  * const boomin = new Boomin("sk_live_...");
  * const distribution = await boomin.distributions.create({
+ *   name: "Spring launch",
  *   objective: "acquisition",
  *   programs: ["prog_123"],
  * });
+ * // `operation` is an id STRING; wait() also accepts an operation object.
  * const { operation } = await boomin.distributions.launch(distribution.id);
- * await boomin.operations.wait(operation.id, { timeout: 120000 });
+ * await boomin.operations.wait(operation, { timeout: 120000 });
  * ```
  *
  * fetch + WebCrypto only: Node >= 18, Cloudflare Workers, Bun, Deno, Edge.
@@ -42,7 +44,7 @@ export class Boomin {
   /**
    * @param {string} secretKey Bearer secret key (`sk_live_...`).
    * @param {{ baseUrl?: string, brand?: string, maxRetries?: number,
-   *           timeout?: number, fetch?: typeof fetch }} [options]
+   *           timeout?: number, rawResponses?: boolean, fetch?: typeof fetch }} [options]
    */
   constructor(secretKey, options = {}) {
     this._http = new HttpClient(secretKey, options);
@@ -66,6 +68,15 @@ export default Boomin;
 
 export { constructEvent } from "./webhooks.js";
 export {
+  camelCaseResponse,
+  snakeCaseBody,
+  toCamelKey,
+  toSnakeKey,
+  OPAQUE_FIELDS,
+  REQUEST_FIELD_MAP,
+  RESPONSE_FIELD_MAP,
+} from "./casing.js";
+export {
   BoominError,
   AuthenticationError,
   PermissionError,
@@ -76,5 +87,6 @@ export {
   OperationConflictError,
   BandLimitReachedError,
   FundingRequiredError,
+  ConflictingParametersError,
   WebhookSignatureVerificationError,
 } from "./errors.js";

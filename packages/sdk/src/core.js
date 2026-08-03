@@ -6,6 +6,21 @@
  */
 
 import { APIError, AuthenticationError, InvalidRequestError, errorFromResponse } from "./errors.js";
+import { buildQueryString, camelCaseResponse, snakeCaseBody } from "./casing.js";
+
+// The casing boundary lives in ./casing.js — including REQUEST_FIELD_MAP, the
+// declared list of nested API structures. Re-exported here because core.js is
+// the module the SDK's internals (and its tests) already import from.
+export {
+  buildQueryString,
+  camelCaseResponse,
+  snakeCaseBody,
+  toCamelKey,
+  toSnakeKey,
+  OPAQUE_FIELDS,
+  REQUEST_FIELD_MAP,
+  RESPONSE_FIELD_MAP,
+} from "./casing.js";
 
 export const SDK_VERSION = "1.0.0-beta.1";
 export const DEFAULT_BASE_URL = "https://api.boomin.ai";
@@ -16,32 +31,6 @@ const MAX_BACKOFF_MS = 8000;
 const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const camelToSnake = (key) => key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
-
-/**
- * Serialize query params. Top-level camelCase keys are converted to the API's
- * snake_case wire form (`startingAfter` -> `starting_after`); null/undefined
- * values are dropped; arrays repeat the key.
- */
-export function buildQueryString(query) {
-  if (!query || typeof query !== "object") return "";
-  const search = new URLSearchParams();
-  for (const [rawKey, value] of Object.entries(query)) {
-    if (value === undefined || value === null) continue;
-    const key = camelToSnake(rawKey);
-    if (Array.isArray(value)) {
-      for (const entry of value) {
-        if (entry === undefined || entry === null) continue;
-        search.append(key, String(entry));
-      }
-    } else {
-      search.append(key, String(value));
-    }
-  }
-  const encoded = search.toString();
-  return encoded ? `?${encoded}` : "";
-}
 
 /** Validate + encode a path segment (resource id). */
 export function pathParam(value, name) {
@@ -80,6 +69,12 @@ export class HttpClient {
     this.brand = options.brand ?? null;
     this.maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
     this.timeout = options.timeout ?? DEFAULT_TIMEOUT_MS;
+    // Escape hatch: hand back the wire's snake_case objects untouched. This is a
+    // CLIENT-level switch, not a per-call flag, on purpose — the return shape is
+    // a property of the client, and a per-call override would make every
+    // TypeScript signature in index.d.ts a lie at half the call sites. Use it
+    // when you are proxying/logging Boomin responses verbatim.
+    this.rawResponses = options.rawResponses === true;
     this.fetch = options.fetch ?? globalThis.fetch;
     if (typeof this.fetch !== "function") {
       throw new APIError(
@@ -95,9 +90,11 @@ export class HttpClient {
    *
    * @param {string} method HTTP verb.
    * @param {string} path Path under /v1/platform (must start with "/").
-   * @param {{ query?: object, body?: object, options?: object }} [init]
+   * @param {{ query?: object, body?: object, options?: object, shape?: string }} [init]
+   *   `shape` keys into REQUEST_FIELD_MAP (see casing.js) and decides which
+   *   nested structures in the body get converted.
    */
-  async request(method, path, { query, body, options = {} } = {}) {
+  async request(method, path, { query, body, options = {}, shape } = {}) {
     const verb = method.toUpperCase();
     const url = `${this.baseUrl}${API_PREFIX}${path}${buildQueryString(query)}`;
     const timeout = options.timeout ?? this.timeout;
@@ -125,7 +122,13 @@ export class HttpClient {
     const requestInit = {
       method: verb,
       headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      // camelCase -> snake_case by declared schema (casing.js). Without it a
+      // camelCase field was dropped by the API's schema and the call answered
+      // 200 OK having done nothing: `enabledEvents` on webhook create landed as
+      // `enabled_events: []`, which means SUBSCRIBE TO EVERY EVENT TYPE.
+      // A camel/snake twin pair throws ConflictingParametersError right here,
+      // before the request is issued.
+      body: body !== undefined ? JSON.stringify(snakeCaseBody(body, shape)) : undefined,
     };
 
     let lastError = null;
@@ -154,8 +157,9 @@ export class HttpClient {
         if (response.status === 204) return null;
         const text = await response.text();
         if (text === "") return null;
+        let parsed;
         try {
-          return JSON.parse(text);
+          parsed = JSON.parse(text);
         } catch (cause) {
           throw new APIError("Boomin API returned a malformed JSON response body.", {
             code: "internal_error",
@@ -163,6 +167,22 @@ export class HttpClient {
             requestId,
             cause,
           });
+        }
+        // Casing is OUTSIDE the JSON try/catch on purpose: camelCaseResponse
+        // throws ConflictingParametersError when the server sends both
+        // spellings of one field, and that must surface as itself, not get
+        // reported as malformed JSON.
+        if (this.rawResponses) return parsed;
+        try {
+          // The wire is snake_case; the SDK is camelCase in BOTH directions.
+          // Customer-owned blobs are exempt — see RESPONSE_FIELD_MAP/casing.js.
+          return camelCaseResponse(parsed);
+        } catch (cause) {
+          if (cause?.code === "conflicting_parameters") {
+            cause.status = response.status;
+            cause.requestId = requestId;
+          }
+          throw cause;
         }
       }
 
@@ -187,8 +207,9 @@ export class HttpClient {
     return this.request("GET", path, { query, options });
   }
 
-  post(path, body, options) {
-    return this.request("POST", path, { body, options });
+  /** @param {string} [shape] Key into REQUEST_FIELD_MAP (see casing.js). */
+  post(path, body, options, shape) {
+    return this.request("POST", path, { body, options, shape });
   }
 
   delete(path, options) {
@@ -210,6 +231,9 @@ export class HttpClient {
  * A promise for one page of a list that is also an async iterable over every
  * item across pages (cursor pagination via starting_after on the last item id).
  *
+ * Reads BOTH `hasMore` (the converted default) and `has_more` (raw mode), so
+ * auto-pagination works either way.
+ *
  * @template T
  */
 export function makeListPromise(fetchPage, params = {}) {
@@ -223,7 +247,8 @@ export function makeListPromise(fetchPage, params = {}) {
       for (;;) {
         const data = Array.isArray(page?.data) ? page.data : [];
         for (const item of data) yield item;
-        if (!page?.has_more || data.length === 0) return;
+        const hasMore = page?.hasMore ?? page?.has_more;
+        if (!hasMore || data.length === 0) return;
         const last = data[data.length - 1];
         if (!last || typeof last.id !== "string") return;
         page = await fetchPage({ ...params, startingAfter: last.id });

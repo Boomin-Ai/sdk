@@ -2,11 +2,18 @@
  * CLI 0.3.0 — command groups over the LIVE /v1/platform REST tree
  * (DISTRIBUTION_CORE §4), driven through @boomin/sdk (the wire truth:
  * bare objects, launch = {distribution,status,operation} id strings,
- * errors = {error:{code}}, list envelopes {object:'list',data,has_more}).
+ * errors = {error:{code}}, list envelopes {object:'list',data,has_more} —
+ * which the SDK hands back as {object,data,hasMore}).
  *
  * Groups: distribution, enrollment, partnership, connection, payout,
  * webhook, events. Operation-returning commands (launch/pause/resume/cancel)
  * poll the operation to a terminal status by default; --no-wait skips.
+ *
+ * CASING: @boomin/sdk speaks camelCase in BOTH directions — params go out as
+ * camelCase and responses come back camelCase (`hasMore`, `approvalStatus`,
+ * `amountCents`), with the REST wire staying snake_case underneath. So every
+ * property read below is camelCase, and `--json` prints the SDK's camelCase
+ * object, not the raw wire body.
  */
 
 import fs from "node:fs/promises";
@@ -104,7 +111,7 @@ export function enrollmentInviteParams(flags) {
     email: flags.email ? String(flags.email) : undefined,
     partner: flags.partner ? String(flags.partner) : undefined,
     name: flags.name ? String(flags.name) : undefined,
-    referral_code: flags.referralCode ? String(flags.referralCode) : undefined,
+    referralCode: flags.referralCode ? String(flags.referralCode) : undefined,
     metadata: parseJsonFlag(flags.metadata, "metadata"),
   });
 }
@@ -166,7 +173,7 @@ export function distributionSummary(distribution) {
     ["Budget", () => budget],
     ["Valid", (d) => d.valid],
     ["Errors", (d) => (Array.isArray(d.errors) && d.errors.length ? JSON.stringify(d.errors) : undefined)],
-    ["Created", (d) => d.created_at],
+    ["Created", (d) => d.createdAt],
   ]);
 }
 
@@ -180,18 +187,18 @@ const DISTRIBUTION_COLUMNS = [
 
 const ENROLLMENT_COLUMNS = [
   { header: "ID", value: (e) => e.id },
-  { header: "APPROVAL", value: (e) => e.approval_status },
+  { header: "APPROVAL", value: (e) => e.approvalStatus },
   { header: "STATUS", value: (e) => e.status },
   { header: "PROGRAM", value: (e) => e.program },
   { header: "PARTNERSHIP", value: (e) => e.partnership },
-  { header: "CODE", value: (e) => e.referral_code ?? "" },
+  { header: "CODE", value: (e) => e.referralCode ?? "" },
 ];
 
 const PARTNERSHIP_COLUMNS = [
   { header: "ID", value: (p) => p.id },
   { header: "STATUS", value: (p) => p.status },
   { header: "PARTNER", value: (p) => (typeof p.partner === "object" ? `${p.partner.name ?? p.partner.email ?? ""} (${p.partner.id})` : p.partner) },
-  { header: "STARTED", value: (p) => p.started_at ?? "" },
+  { header: "STARTED", value: (p) => p.startedAt ?? "" },
 ];
 
 const CONNECTION_COLUMNS = [
@@ -205,14 +212,14 @@ const CONNECTION_COLUMNS = [
 const PAYOUT_COLUMNS = [
   { header: "ID", value: (p) => p.id },
   { header: "STATUS", value: (p) => p.status },
-  { header: "AMOUNT", value: (p) => (p.amount_cents !== undefined ? p.amount_cents : p.amount ?? "") },
-  { header: "PERIOD", value: (p) => (p.period_start ? `${p.period_start}..${p.period_end}` : "") },
+  { header: "AMOUNT", value: (p) => (p.amountCents !== undefined ? p.amountCents : p.amount ?? "") },
+  { header: "PERIOD", value: (p) => (p.periodStart ? `${p.periodStart}..${p.periodEnd}` : "") },
 ];
 
 const WEBHOOK_COLUMNS = [
   { header: "ID", value: (w) => w.id },
   { header: "STATUS", value: (w) => w.status },
-  { header: "EVENTS", value: (w) => (Array.isArray(w.enabled_events) && w.enabled_events.length ? w.enabled_events.join(",") : "(all)") },
+  { header: "EVENTS", value: (w) => (Array.isArray(w.enabledEvents) && w.enabledEvents.length ? w.enabledEvents.join(",") : "(all)") },
   { header: "URL", value: (w) => w.url },
 ];
 
@@ -221,7 +228,7 @@ const EVENT_COLUMNS = [
   { header: "ID", value: (e) => e.id },
   { header: "TYPE", value: (e) => e.type },
   { header: "SUBJECT", value: (e) => (e.subject ? `${e.subject.type}:${e.subject.id}` : "") },
-  { header: "CREATED", value: (e) => e.created_at ?? "" },
+  { header: "CREATED", value: (e) => e.createdAt ?? "" },
 ];
 
 // ── Operation polling ─────────────────────────────────────────────────────────
@@ -239,7 +246,7 @@ function operationSummary(operation) {
     ["Operation", (o) => o.id],
     ["Kind", (o) => o.kind],
     ["Status", (o) => o.status],
-    ["Waiting reason", (o) => o.waiting_reason],
+    ["Waiting reason", (o) => o.waitingReason],
     ["Error", (o) => (o.error ? JSON.stringify(o.error) : undefined)],
   ]);
 }
@@ -259,7 +266,7 @@ export async function distributionCommand(subcommand, flags, ctx) {
     const page = await client.distributions.list(listParams(flags, { status: flags.status || undefined }));
     if (flags.json) return log(JSON.stringify(page, null, 2));
     log(formatTable(page.data, DISTRIBUTION_COLUMNS));
-    if (page.has_more) log("(more — use --starting-after with the last id)");
+    if (page.hasMore) log("(more — use --starting-after with the last id)");
     return;
   }
   if (subcommand === "get") {
@@ -325,9 +332,9 @@ export async function enrollmentCommand(subcommand, flags, ctx) {
       ["Enrollment", (e) => e.id],
       ["Program", (e) => e.program],
       ["Partnership", (e) => e.partnership],
-      ["Approval", (e) => e.approval_status],
+      ["Approval", (e) => e.approvalStatus],
       ["Status", (e) => e.status],
-      ["Referral code", (e) => e.referral_code],
+      ["Referral code", (e) => e.referralCode],
     ]));
     log(`\nNext: npx @boomin/cli enrollment approve ${enrollment.id}`);
     return;
@@ -338,9 +345,9 @@ export async function enrollmentCommand(subcommand, flags, ctx) {
     if (flags.json) return log(JSON.stringify(enrollment, null, 2));
     return log(formatObject(enrollment, [
       ["Enrollment", (e) => e.id],
-      ["Approval", (e) => e.approval_status],
+      ["Approval", (e) => e.approvalStatus],
       ["Status", (e) => e.status],
-      ["Qualification", (e) => e.qualification_status],
+      ["Qualification", (e) => e.qualificationStatus],
     ]));
   }
   if (subcommand === "list") {
@@ -351,7 +358,7 @@ export async function enrollmentCommand(subcommand, flags, ctx) {
     }));
     if (flags.json) return log(JSON.stringify(page, null, 2));
     log(formatTable(page.data, ENROLLMENT_COLUMNS));
-    if (page.has_more) log("(more — use --starting-after with the last id)");
+    if (page.hasMore) log("(more — use --starting-after with the last id)");
     return;
   }
   if (subcommand === "get") {
@@ -363,11 +370,11 @@ export async function enrollmentCommand(subcommand, flags, ctx) {
       ["Program", (e) => e.program],
       ["Partnership", (e) => e.partnership],
       ["Partner", (e) => e.partner],
-      ["Approval", (e) => e.approval_status],
+      ["Approval", (e) => e.approvalStatus],
       ["Status", (e) => e.status],
-      ["Billing", (e) => e.billing_status],
-      ["Qualification", (e) => e.qualification_status],
-      ["Referral code", (e) => e.referral_code],
+      ["Billing", (e) => e.billingStatus],
+      ["Qualification", (e) => e.qualificationStatus],
+      ["Referral code", (e) => e.referralCode],
     ]));
   }
   throw new Error(`Unknown enrollment subcommand: ${subcommand}. Use invite|approve|reject|list|get.`);
@@ -379,7 +386,7 @@ export async function partnershipCommand(subcommand, flags, ctx) {
     const page = await client.partnerships.list(listParams(flags, { status: flags.status || undefined }));
     if (flags.json) return log(JSON.stringify(page, null, 2));
     log(formatTable(page.data, PARTNERSHIP_COLUMNS));
-    if (page.has_more) log("(more — use --starting-after with the last id)");
+    if (page.hasMore) log("(more — use --starting-after with the last id)");
     return;
   }
   if (subcommand === "get") {
@@ -390,8 +397,8 @@ export async function partnershipCommand(subcommand, flags, ctx) {
       ["Partnership", (p) => p.id],
       ["Status", (p) => p.status],
       ["Partner", (p) => (typeof p.partner === "object" ? `${p.partner.name ?? p.partner.email ?? ""} (${p.partner.id})` : p.partner)],
-      ["Started", (p) => p.started_at],
-      ["Ended", (p) => p.ended_at],
+      ["Started", (p) => p.startedAt],
+      ["Ended", (p) => p.endedAt],
     ]));
     if (Array.isArray(partnership.enrollments) && partnership.enrollments.length) {
       log("");
@@ -407,9 +414,9 @@ export async function partnershipCommand(subcommand, flags, ctx) {
     return log(formatObject(partnership, [
       ["Partnership", (p) => p.id],
       ["Status", (p) => p.status],
-      ["Deployments paused", (p) => (p.deployments_paused ? p.deployments_paused.join(", ") || "(none)" : undefined)],
-      ["Deployments resumed", (p) => (p.deployments_resumed ? p.deployments_resumed.join(", ") || "(none)" : undefined)],
-      ["Ended", (p) => p.ended_at],
+      ["Deployments paused", (p) => (p.deploymentsPaused ? p.deploymentsPaused.join(", ") || "(none)" : undefined)],
+      ["Deployments resumed", (p) => (p.deploymentsResumed ? p.deploymentsResumed.join(", ") || "(none)" : undefined)],
+      ["Ended", (p) => p.endedAt],
     ]));
   }
   throw new Error(`Unknown partnership subcommand: ${subcommand}. Use list|get|pause|resume|end.`);
@@ -431,7 +438,7 @@ export async function connectionCommand(subcommand, flags, ctx) {
       ["Provider", (c) => c.provider],
       ["Kind", (c) => c.kind],
       ["Status", (c) => c.status],
-      ["Account", (c) => c.provider_account_id],
+      ["Account", (c) => c.providerAccountId],
       ["Owner", (c) => (c.owner ? `${c.owner.type}:${c.owner.id}` : undefined)],
       ["Grants", (c) => (Array.isArray(c.grants) ? c.grants.length : undefined)],
     ]));
@@ -455,14 +462,14 @@ export async function payoutCommand(subcommand, flags, ctx) {
     }));
     if (flags.json) return log(JSON.stringify(page, null, 2));
     log(formatTable(page.data, PAYOUT_COLUMNS));
-    if (page.has_more) log("(more — use --starting-after with the last id)");
+    if (page.hasMore) log("(more — use --starting-after with the last id)");
     return;
   }
   if (subcommand === "run") {
     if (!flags.periodStart || !flags.periodEnd) {
       throw new Error("--period-start and --period-end (YYYY-MM-DD) are required. Usage: npx @boomin/cli payout run --period-start 2026-08-01 --period-end 2026-09-01");
     }
-    const result = await client.payouts.run({ period_start: String(flags.periodStart), period_end: String(flags.periodEnd) });
+    const result = await client.payouts.run({ periodStart: String(flags.periodStart), periodEnd: String(flags.periodEnd) });
     if (flags.json) return log(JSON.stringify(result, null, 2));
     log(`Payout run complete for ${flags.periodStart}..${flags.periodEnd}.`);
     if (result.summary) log(formatObject(result.summary, Object.keys(result.summary).map((key) => [key, (s) => s[key]])));
@@ -471,13 +478,13 @@ export async function payoutCommand(subcommand, flags, ctx) {
   }
   if (subcommand === "export") {
     const result = await client.payouts.exportCsv(removeEmpty({
-      period_start: flags.periodStart ? String(flags.periodStart) : undefined,
-      period_end: flags.periodEnd ? String(flags.periodEnd) : undefined,
+      periodStart: flags.periodStart ? String(flags.periodStart) : undefined,
+      periodEnd: flags.periodEnd ? String(flags.periodEnd) : undefined,
     }));
     let outPath = null;
-    if (flags.out && result.download_url) {
+    if (flags.out && result.downloadUrl) {
       outPath = path.resolve(process.cwd(), String(flags.out));
-      const response = await (ctx.fetch ?? fetch)(result.download_url);
+      const response = await (ctx.fetch ?? fetch)(result.downloadUrl);
       if (!response.ok) throw new Error(`CSV download failed with ${response.status}.`);
       await fs.writeFile(outPath, Buffer.from(await response.arrayBuffer()));
     }
@@ -487,8 +494,8 @@ export async function payoutCommand(subcommand, flags, ctx) {
       ["Status", (r) => r.status],
       ["Items", (r) => (Array.isArray(r.items) ? r.items.length : undefined)],
       ["Skipped", (r) => (Array.isArray(r.skipped) ? r.skipped.length : undefined)],
-      ["Export key", (r) => r.export_file_key],
-      ["Download", (r) => r.download_url],
+      ["Export key", (r) => r.exportFileKey],
+      ["Download", (r) => r.downloadUrl],
     ]));
     if (outPath) log(`Wrote ${outPath}`);
     return;
@@ -499,17 +506,18 @@ export async function payoutCommand(subcommand, flags, ctx) {
     log(`Rails: ${Array.isArray(status.rails) && status.rails.length ? status.rails.map((rail) => rail.rail ?? rail.id ?? JSON.stringify(rail)).join(", ") : "(none configured)"}`);
     if (status.stripe) {
       log(`Stripe configured: ${status.stripe.configured ? "yes" : "no"}`);
-      log(`Partner payout accounts: ${status.stripe.partner_accounts} (${status.stripe.partner_accounts_payouts_enabled} payouts-enabled)`);
+      log(`Partner payout accounts: ${status.stripe.partnerAccounts} (${status.stripe.partnerAccountsPayoutsEnabled} payouts-enabled)`);
     }
     return;
   }
   throw new Error(`Unknown payout subcommand: ${subcommand}. Use list|run|export|connect.`);
 }
 
-/** Webhook endpoint responses arrive as {webhook_endpoint:{...}} on
- * create/get/update/rotate — unwrap for shaping, keep raw for --json. */
+/** Webhook endpoint responses arrive wrapped on create/get/update/rotate. The
+ * SDK already unwraps them; this stays as a belt-and-braces for a wrapped body
+ * (camelCased `webhookEndpoint`, or `webhook_endpoint` under rawResponses). */
 function unwrapEndpoint(response) {
-  return response?.webhook_endpoint ?? response;
+  return response?.webhookEndpoint ?? response?.webhook_endpoint ?? response;
 }
 
 export async function webhookCommand(subcommand, flags, ctx) {
@@ -519,14 +527,14 @@ export async function webhookCommand(subcommand, flags, ctx) {
     const raw = await client.webhooks.endpoints.create(removeEmpty({
       url: String(flags.url),
       description: flags.description ? String(flags.description) : undefined,
-      enabled_events: flags.events ? parseCsv(flags.events) : undefined,
+      enabledEvents: flags.events ? parseCsv(flags.events) : undefined,
     }));
     if (flags.json) return log(JSON.stringify(raw, null, 2));
     const endpoint = unwrapEndpoint(raw);
     log(formatObject(endpoint, [
       ["Endpoint", (w) => w.id],
       ["URL", (w) => w.url],
-      ["Events", (w) => (Array.isArray(w.enabled_events) && w.enabled_events.length ? w.enabled_events.join(", ") : "(all public events)")],
+      ["Events", (w) => (Array.isArray(w.enabledEvents) && w.enabledEvents.length ? w.enabledEvents.join(", ") : "(all public events)")],
       ["Status", (w) => w.status],
     ]));
     if (endpoint.secret) {
@@ -569,7 +577,7 @@ export async function eventsCommand(subcommand, flags, ctx) {
     const page = await client.events.list(listParams(flags, { type: flags.type || undefined }));
     if (flags.json) return log(JSON.stringify(page, null, 2));
     log(formatTable(page.data, EVENT_COLUMNS));
-    if (page.has_more) log("(more — use --starting-after with the last seq or evt_ id)");
+    if (page.hasMore) log("(more — use --starting-after with the last seq or evt_ id)");
     return;
   }
   throw new Error(`Unknown events subcommand: ${subcommand}. Use list.`);

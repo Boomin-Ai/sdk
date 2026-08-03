@@ -7,6 +7,12 @@ export interface ConstructEventOptions {
   tolerance?: number;
   /** Clock override in unix seconds (testing). */
   now?: number;
+  /**
+   * Return the wire's raw snake_case payload instead of camelCasing it.
+   * Default false — a verified event reads like every other SDK value
+   * (`event.data.object.valueMinor`), with customer-owned blobs untouched.
+   */
+  raw?: boolean;
 }
 
 /**
@@ -17,6 +23,8 @@ export interface ConstructEventOptions {
  * - `secret` accepts an array during secret rotation; the header may equally
  *   carry multiple `v1=` entries (platform-side rotation overlap).
  * - Async (WebCrypto): `await` the result.
+ * - The returned event is camelCased (keys only); pass `{ raw: true }` for the
+ *   wire shape. Signature verification always runs over the raw bytes.
  *
  * @throws WebhookSignatureVerificationError on any verification failure.
  */
