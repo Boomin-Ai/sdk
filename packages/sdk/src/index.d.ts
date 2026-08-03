@@ -555,22 +555,199 @@ export interface PayoutBatch extends BaseObject {
   periodEnd?: string | null;
   exportFileKey?: string | null;
   exportFormat?: string | null;
-  /** Present on `exportCsv`; may be null when presigning is unavailable — a
-   *  null here means the file was NOT delivered, even though the call is 201. */
+  /**
+   * The presigned artifact URL, RE-MINTED on every `batches.retrieve` of a
+   * batch that has an export file. It is deliberately absent from the export
+   * mutation's 202: a URL handed back there would already be expiring by the
+   * time an operator opened it, and could not be re-obtained without
+   * re-exporting.
+   *
+   * `null` on a batch that has an `exportFileKey` means presigning credentials
+   * are unavailable — the file exists but was NOT delivered.
+   */
   downloadUrl?: string | null;
   exportedAt?: string | null;
   error?: Record<string, unknown> | null;
+  /** Frozen items, returned alongside the batch by `create` and `retrieve`. */
+  items?: PayoutBatchItem[];
+  /** Rows excluded from the batch, with the reason (`create` only). */
+  skipped?: Array<Record<string, unknown>>;
 }
 
-/** `payouts.run` recomputes the period and returns the rows plus a summary. */
+export interface PayoutBatchItem {
+  id: string;
+  payoutId?: string;
+  status?: string;
+  amountCents?: number;
+  currency?: string;
+  recipient?: Record<string, unknown> | null;
+  [key: string]: unknown;
+}
+
+/** How a run finished. Branch on THIS, never on a count. */
+export type PayoutRunOutcome = "payouts_created" | "no_eligible_activity" | (string & {});
+
+/**
+ * `payouts.run` recomputes the period and reports what it evaluated.
+ *
+ * There is no `warnings[]`: an automated caller branches on `outcome` and reads
+ * the counters. A brand with nothing configured never reaches this shape — it
+ * throws `PayoutRulesRequiredError` (409).
+ */
 export interface PayoutRun {
   object?: "payout_run";
+  outcome: PayoutRunOutcome;
+  rulesEvaluated: number;
+  splitsEvaluated: number;
+  eventsEvaluated: number;
+  payoutsCreated: number;
+  /**
+   * Structurally 0. Payout compute records OBLIGATIONS and never draws down a
+   * budget; the field is reported so callers can branch on one diagnostic shape
+   * across both engines. `awaitingAccount` is the count that actually blocks
+   * money leaving.
+   */
+  underfunded: number;
+  awaitingAccount: number;
   payouts: Payout[];
-  summary: Record<string, unknown>;
+  summary: PayoutRunSummary;
+}
+
+export interface PayoutRunSummary {
+  /** Minor units of the payouts' currency — the wire field is `total_amount_minor`. */
+  totalAmountMinor: number;
+  count: number;
+  awaitingAccount: number;
+  bridged: number;
+  unresolvedRecipients: number;
+}
+
+/**
+ * The 202 handed back by `exportCsv` and `batches.export`: ONE export contract.
+ * `batch` and `operation` are id STRINGS — poll the operation, then read the
+ * batch for `downloadUrl`.
+ */
+export interface PayoutExportAccepted {
+  batch: string;
+  status: "exporting" | (string & {});
+  operation: string;
+  /** `exportCsv` only — the build half is synchronous, so items are known now. */
+  items?: PayoutBatchItem[];
+  /** `exportCsv` only. */
+  skipped?: Array<Record<string, unknown>>;
+}
+
+/** The 202 handed back by `batches.confirm`. */
+export interface PayoutConfirmAccepted {
+  batch: string;
+  status: "confirming" | (string & {});
+  operation: string;
+}
+
+export type PayoutRuleType = "revenue_split" | "cpa" | "threshold_bonus";
+export type PayoutRuleStatus = "active" | "paused" | "archived";
+export type PayoutRuleScopeType = "program" | "collection" | "unit" | "member";
+
+/**
+ * A rule's scope — a discriminated object, never a raw
+ * `applies_to`/`scope_id`/`program_id` triple, so an incoherent combination
+ * cannot be spelled. `program` is required on EVERY variant: the evaluator
+ * resolves recipients through program membership, so a rule without one is
+ * inert whatever its type.
+ */
+export type PayoutRuleScope =
+  | { type: "program"; program: string }
+  | { type: "collection"; program: string; collection: string }
+  | { type: "unit"; program: string; unit: string }
+  | { type: "member"; program: string; member: string };
+
+/**
+ * How a partner EARNS. Economics are IMMUTABLE after creation — see
+ * `PayoutRulesClient.update`.
+ */
+export interface PayoutRule extends BaseObject {
+  object?: "payout_rule";
+  name: string;
+  type: PayoutRuleType;
+  scope: PayoutRuleScope;
+  metricKey?: string | null;
+  rateBps?: number | null;
+  /**
+   * Minor units of `currency` — the wire field is `per_unit_minor`, NOT cents.
+   * The object carries its own currency and "cents" is a USD-specific word.
+   */
+  perUnitMinor?: number | null;
+  threshold?: number | null;
+  /** Minor units of `currency` — the wire field is `bonus_minor`. */
+  bonusMinor?: number | null;
+  windowKey?: string | null;
+  windowDays?: number | null;
+  currency: string;
+  revenueBasis?: string | null;
+  status: PayoutRuleStatus;
+}
+
+export type PayoutRailKind = "csv_batch" | "stripe_connect" | (string & {});
+export type PayoutExportFormat = "paypal_payouts_csv" | "wise_batch_csv" | (string & {});
+
+/**
+ * ONE column of an exported file. This is YOUR data: `header` reaches the SDK's
+ * casing boundary and comes back byte-identical, in the order you sent it,
+ * because a renamed or reordered header is a different file for the bank that
+ * ingests it. `key` is checked server-side against the closed slot vocabulary —
+ * an unknown one would render as `undefined` in whatever column it names.
+ */
+export interface PayoutRailColumn {
+  key: string;
+  header: string;
+}
+
+/**
+ * A rail's config is TWO things:
+ *   `format` / `walletFunded`  API-owned, validated strictly, cased normally.
+ *   `columns`                  customer-owned, preserved verbatim both ways.
+ */
+export interface PayoutRailConfig {
+  /** REQUIRED on a csv_batch rail: PayPal's and Wise's column sets differ, so
+   *  there is no neutral default and the API refuses to pick one. */
+  format?: PayoutExportFormat;
+  /** Turns `confirm` into a guarded wallet debit per item. */
+  walletFunded?: boolean;
+  columns?: PayoutRailColumn[];
+}
+
+/** How money physically LEAVES. */
+export interface PayoutRail extends BaseObject {
+  object?: "payout_rail";
+  rail: PayoutRailKind;
+  status: "active" | "disabled" | (string & {});
+  /** At most one active default per (brand, livemode) — enforced in the DB. */
+  isDefault: boolean;
+  config: PayoutRailConfig;
+  livemode?: boolean;
+}
+
+/** Rail identity + state as reported by `connectStatus` — never `config`. */
+export interface PayoutConnectStatusRail {
+  id: string;
+  object?: "payout_rail";
+  rail: PayoutRailKind;
+  status: string;
+  isDefault: boolean;
 }
 
 export interface PayoutConnectStatus {
-  object?: "payout_connect_status";
+  object?: "payouts.connect_status";
+  /**
+   * Identity and state ONLY. Rail `config` is a `payout_rails:read` surface —
+   * read it with `payouts.rails.list()`.
+   */
+  rails: PayoutConnectStatusRail[];
+  stripe: {
+    configured: boolean;
+    partnerAccounts: number;
+    partnerAccountsPayoutsEnabled: number;
+  };
   [key: string]: unknown;
 }
 
@@ -856,24 +1033,147 @@ export interface PayoutPeriodParams {
   periodEnd: string;
 }
 
+/**
+ * Create a payout rule. The type decides which economics are REQUIRED:
+ *   revenue_split  → rateBps
+ *   cpa            → metricKey + perUnitMinor
+ *   threshold_bonus→ metricKey + threshold + bonusMinor
+ * All of them are frozen the moment the rule exists.
+ */
+export interface PayoutRuleCreateParams {
+  name: string;
+  type: PayoutRuleType;
+  scope: PayoutRuleScope;
+  metricKey?: string;
+  rateBps?: number;
+  /** Minor units — `per_unit_minor` on the wire. */
+  perUnitMinor?: number;
+  threshold?: number;
+  /** Minor units — `bonus_minor` on the wire. */
+  bonusMinor?: number;
+  windowKey?: string;
+  windowDays?: number;
+  /** ISO-4217, lowercase. Defaults to `usd`. */
+  currency?: string;
+}
+
+/** The ONLY mutable fields on a rule. Everything else is `immutable_parameter`. */
+export interface PayoutRuleUpdateParams {
+  name?: string;
+  status?: PayoutRuleStatus;
+}
+
+export interface PayoutRulesClient {
+  create(params: Params<PayoutRuleCreateParams>, options?: RequestOptions): Promise<PayoutRule>;
+  retrieve(id: string, options?: RequestOptions): Promise<PayoutRule>;
+  list(
+    params?: Params<PaginationParams & { program?: string; status?: PayoutRuleStatus; type?: PayoutRuleType }>,
+    options?: RequestOptions,
+  ): ListPromise<PayoutRule>;
+  /**
+   * `name` and `status` only. The ledger references the rule that produced each
+   * row, so an economics edit would re-interpret settled history — sending one
+   * throws `ImmutableParameterError`. Replace-then-archive instead.
+   */
+  update(id: string, params: Params<PayoutRuleUpdateParams>, options?: RequestOptions): Promise<PayoutRule>;
+  /**
+   * Stop the rule firing on the next run, keeping every ledger row it produced
+   * readable. There is no `del()`: `payouts.rule_id` cascades, so a hard delete
+   * would erase the record of money that was actually paid. Idempotent.
+   */
+  archive(id: string, params?: Params, options?: RequestOptions): Promise<PayoutRule>;
+}
+
+export interface PayoutRailCreateParams {
+  rail: PayoutRailKind;
+  config?: PayoutRailConfig;
+  isDefault?: boolean;
+  status?: "active" | "disabled";
+}
+
+export interface PayoutRailsClient {
+  /**
+   * Create, NOT upsert — a configured rail throws
+   * `PayoutRailAlreadyExistsError` rather than being silently rewritten.
+   */
+  create(params: Params<PayoutRailCreateParams>, options?: RequestOptions): Promise<PayoutRail>;
+  retrieve(id: string, options?: RequestOptions): Promise<PayoutRail>;
+  list(params?: Params<PaginationParams>, options?: RequestOptions): ListPromise<PayoutRail>;
+  /** `config` REPLACES the stored object wholesale; there is no merge. */
+  update(
+    id: string,
+    params: Params<Omit<PayoutRailCreateParams, "rail">>,
+    options?: RequestOptions,
+  ): Promise<PayoutRail>;
+}
+
+export interface PayoutBatchCreateParams {
+  /** Omit to use the brand's default rail. */
+  rail?: PayoutRailKind;
+  periodStart?: string;
+  periodEnd?: string;
+}
+
+export interface PayoutBatchConfirmParams {
+  /**
+   * The provider's own reference for this disbursement. Repeating a confirm
+   * with the SAME ref replays one operation, so a retry after a timeout cannot
+   * settle the run twice.
+   */
+  externalBatchRef?: string;
+  /** Per-item outcomes; `item` must name an item of THIS batch. */
+  results?: Array<{ item: string; status: "paid" | "failed" | "returned"; reason?: string }>;
+}
+
+export interface PayoutBatchesClient {
+  /** Freeze the eligible rows into a batch — synchronous. */
+  create(params?: Params<PayoutBatchCreateParams>, options?: RequestOptions): Promise<PayoutBatch>;
+  /** Carries `downloadUrl`, re-minted on every read. */
+  retrieve(id: string, options?: RequestOptions): Promise<PayoutBatch>;
+  list(params?: Params<PaginationParams>, options?: RequestOptions): ListPromise<PayoutBatch>;
+  /** 202 — poll `operation`, then read the batch for `downloadUrl`. */
+  export(id: string, params?: Params, options?: RequestOptions): Promise<PayoutExportAccepted>;
+  /** 202 — settling is per-item and uncapped, so it runs as an Operation. */
+  confirm(
+    id: string,
+    params?: Params<PayoutBatchConfirmParams>,
+    options?: RequestOptions,
+  ): Promise<PayoutConfirmAccepted>;
+  /** Unfreeze — synchronous. */
+  cancel(id: string, params?: Params, options?: RequestOptions): Promise<PayoutBatch>;
+}
+
 export interface PayoutsClient {
   list(
-    params?: Params<PaginationParams & { status?: string; periodStart?: string; periodEnd?: string }>,
+    params?: Params<PaginationParams & { status?: string; partner?: string; periodStart?: string; periodEnd?: string }>,
     options?: RequestOptions,
   ): ListPromise<Payout>;
   /**
-   * Recompute the period's payout rows. Both dates are REQUIRED. Returns zero
-   * rows until the brand has at least one active payout rule.
+   * Recompute the period's payout rows. Both dates are REQUIRED.
+   *
+   * Branch on `outcome`, not on a count: a brand with no active rule and no
+   * active content split throws `PayoutRulesRequiredError` (409) rather than
+   * answering zero, because "nothing is configured" and "nothing qualified"
+   * are different answers with different fixes.
    */
   run(params: Params<PayoutPeriodParams>, options?: RequestOptions): Promise<PayoutRun>;
-  /** Build + export a csv_batch over the eligible rows on the csv_batch rail. */
-  exportCsv(params?: Params<Partial<PayoutPeriodParams>>, options?: RequestOptions): Promise<PayoutBatch>;
-  /** Stripe Connect payout-account status. */
+  /**
+   * Build + export on the csv_batch rail in one call — 202. The build half is
+   * synchronous, so rail/empty failures still come back typed and immediately;
+   * the file arrives via the operation and `batches.retrieve().downloadUrl`.
+   */
+  exportCsv(
+    params?: Params<Partial<PayoutPeriodParams>>,
+    options?: RequestOptions,
+  ): Promise<PayoutExportAccepted>;
+  /** Disbursement readiness. Rail entries carry NO `config`. */
   connectStatus(params?: Params, options?: RequestOptions): Promise<PayoutConnectStatus>;
-  batches: {
-    retrieve(id: string, options?: RequestOptions): Promise<PayoutBatch>;
-    list(params?: Params<PaginationParams>, options?: RequestOptions): ListPromise<PayoutBatch>;
-  };
+  /** How a partner EARNS. */
+  rules: PayoutRulesClient;
+  /** How money physically LEAVES. */
+  rails: PayoutRailsClient;
+  /** One frozen disbursement run. */
+  batches: PayoutBatchesClient;
 }
 
 // ---------------------------------------------------------------------------
@@ -922,6 +1222,12 @@ export {
   OperationConflictError,
   BandLimitReachedError,
   FundingRequiredError,
+  PayoutRulesRequiredError,
+  PayoutRailRequiredError,
+  PayoutRailAlreadyExistsError,
+  ImmutableParameterError,
+  PayoutBatchEmptyError,
+  PayoutBatchStateError,
   ConflictingParametersError,
   WebhookSignatureVerificationError,
   type BoominErrorCode,

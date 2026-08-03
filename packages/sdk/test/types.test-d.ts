@@ -62,8 +62,45 @@ async function exercise(): Promise<void> {
   const endpoint = await boomin.webhooks.endpoints.create({ url: "https://x.com/wh", enabledEvents: ["payout.settled"] });
   const _secret: string | undefined = endpoint.secret;
   const _events: string[] | undefined = endpoint.enabledEvents;
-  await boomin.payouts.run({ periodStart: "2026-08-01", periodEnd: "2026-08-31" });
+  const run = await boomin.payouts.run({ periodStart: "2026-08-01", periodEnd: "2026-08-31" });
+  // Branch on `outcome`, never on a count — the two used to be one number.
+  const _outcome: string = run.outcome;
+  const _evaluated: number = run.rulesEvaluated;
+  const _totalMinor: number = run.summary.totalAmountMinor;
   await boomin.payouts.batches.retrieve("pb_1");
+
+  // Payout configuration nests under `payouts` — there is no root client.
+  const rule = await boomin.payouts.rules.create({
+    name: "Registration CPA",
+    type: "cpa",
+    scope: { type: "program", program: "prog_1" },
+    metricKey: "event_registration",
+    perUnitMinor: 500,
+  });
+  const _perUnit: number | null | undefined = rule.perUnitMinor;
+  const _scopeProgram: string = rule.scope.program;
+  await boomin.payouts.rules.archive(rule.id);
+  const rail = await boomin.payouts.rails.create({
+    rail: "csv_batch",
+    isDefault: true,
+    config: {
+      format: "paypal_payouts_csv",
+      walletFunded: false,
+      // The customer's own headers, in the customer's own casing.
+      columns: [{ key: "email", header: "Email Address" }],
+    },
+  });
+  const _header: string | undefined = rail.config.columns?.[0].header;
+  const _walletFunded: boolean | undefined = rail.config.walletFunded;
+  const accepted = await boomin.payouts.batches.export("pb_1");
+  // id STRINGS, not objects.
+  const _op: string = accepted.operation;
+  const _batchRef: string = accepted.batch;
+  await boomin.payouts.batches.confirm("pb_1", {
+    externalBatchRef: "PAYPAL-2026-08",
+    results: [{ item: "pbi_1", status: "paid" }],
+  });
+  void [_outcome, _evaluated, _totalMinor, _perUnit, _scopeProgram, _header, _walletFunded, _op, _batchRef];
 
   // responses are camelCase all the way down
   const _receivedAt: string | undefined = (
@@ -72,10 +109,13 @@ async function exercise(): Promise<void> {
   const _planHash: string | null | undefined = distribution.planHash;
   const _waiting: string | null | undefined = settled.waitingReason;
   const _createdAt: string | undefined = enrollment.createdAt;
-  const _batchUrl: string | null | undefined = (await boomin.payouts.exportCsv({})).downloadUrl;
+  // exportCsv is a 202 of id strings; the URL lives on the batch, re-minted on
+  // every read, so it can never be handed back already expiring.
+  const _exportBatch: string = (await boomin.payouts.exportCsv({})).batch;
+  const _batchUrl: string | null | undefined = (await boomin.payouts.batches.retrieve("pb_1")).downloadUrl;
   // …except inside customer-owned blobs, whose keys round-trip verbatim.
   const _specKey: unknown = distribution.spec?.enrollment_policy;
-  void [_receivedAt, _planHash, _waiting, _createdAt, _batchUrl, _specKey];
+  void [_receivedAt, _planHash, _waiting, _createdAt, _exportBatch, _batchUrl, _specKey];
 
   // raw escape hatch: same client, wire-shaped objects
   const rawClient = new Boomin("sk_live_x", { rawResponses: true });

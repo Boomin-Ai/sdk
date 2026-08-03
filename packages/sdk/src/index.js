@@ -87,6 +87,12 @@ export {
   OperationConflictError,
   BandLimitReachedError,
   FundingRequiredError,
+  PayoutRulesRequiredError,
+  PayoutRailRequiredError,
+  PayoutRailAlreadyExistsError,
+  ImmutableParameterError,
+  PayoutBatchEmptyError,
+  PayoutBatchStateError,
   ConflictingParametersError,
   WebhookSignatureVerificationError,
 } from "./errors.js";
