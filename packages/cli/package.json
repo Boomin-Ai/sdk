@@ -39,6 +39,6 @@
   "author": "Boomin",
   "license": "MIT",
   "dependencies": {
-    "@boomin/sdk": "^1.0.0-beta.1"
+    "@boomin/sdk": "^1.0.0-beta.2"
   }
 }
