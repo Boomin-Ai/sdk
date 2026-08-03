@@ -44,7 +44,7 @@ export class Boomin {
   /**
    * @param {string} secretKey Bearer secret key (`sk_live_...`).
    * @param {{ baseUrl?: string, brand?: string, maxRetries?: number,
-   *           timeout?: number, fetch?: typeof fetch }} [options]
+   *           timeout?: number, rawResponses?: boolean, fetch?: typeof fetch }} [options]
    */
   constructor(secretKey, options = {}) {
     this._http = new HttpClient(secretKey, options);
@@ -68,6 +68,14 @@ export default Boomin;
 
 export { constructEvent } from "./webhooks.js";
 export {
+  camelCaseResponse,
+  snakeCaseBody,
+  toCamelKey,
+  toSnakeKey,
+  OPAQUE_FIELDS,
+  REQUEST_FIELD_MAP,
+} from "./casing.js";
+export {
   BoominError,
   AuthenticationError,
   PermissionError,
@@ -78,5 +86,6 @@ export {
   OperationConflictError,
   BandLimitReachedError,
   FundingRequiredError,
+  ConflictingParametersError,
   WebhookSignatureVerificationError,
 } from "./errors.js";
