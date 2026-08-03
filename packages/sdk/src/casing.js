@@ -1,30 +1,34 @@
 /**
  * ┌───────────────────────────────────────────────────────────────────────────┐
  * │  THE CASING BOUNDARY — the one file that knows the wire is snake_case.     │
- * │                                                                            │
- * │  @boomin/sdk speaks camelCase in BOTH directions. The REST wire speaks      │
- * │  snake_case. Everything that translates between the two lives here.        │
- * │                                                                            │
- * │  >>> ADDING A NESTED STRUCTURE TO THE API? EDIT `REQUEST_FIELD_MAP`. <<<   │
- * │  >>> ADDING A CUSTOMER-OWNED FREE-FORM BLOB?  EDIT `OPAQUE_FIELDS`.   <<<  │
+ * │                                                                           │
+ * │  @boomin/sdk speaks camelCase in BOTH directions. The REST wire speaks     │
+ * │  snake_case. Everything that translates between the two lives here.       │
+ * │                                                                           │
+ * │  >>> API GREW A NESTED REQUEST STRUCTURE? EDIT `REQUEST_FIELD_MAP`.  <<<   │
+ * │  >>> API GREW A CUSTOMER-OWNED BLOB?      EDIT `RESPONSE_FIELD_MAP`. <<<   │
  * └───────────────────────────────────────────────────────────────────────────┘
  *
- * Two rules, and they are deliberately not symmetric in HOW they are declared:
+ * Both directions are driven by DECLARED SCHEMA, transcribed from
+ * `api/src/routes/platform-v1/*.ts`. The SDK is already coupled to the API
+ * contract; these two maps make the coupling explicit, greppable and
+ * unit-testable instead of implicit in a regex.
  *
- * 1. REQUESTS convert by DECLARED SCHEMA (`REQUEST_FIELD_MAP`), never by
- *    structural guesswork. The SDK is already coupled to the API contract; this
- *    file makes the coupling explicit, greppable, and unit-testable. A field the
- *    map does not declare has its VALUE passed through verbatim — the safe
- *    default, because the cost of a missed conversion is now a loud 400 from the
- *    API's sealed `.strict()` schemas, while the cost of an over-eager
- *    conversion is silently corrupting a caller's own data.
+ * - `REQUEST_FIELD_MAP` declares, per request shape, which nested structures
+ *   the API owns (`subjects[]`, `budget`) and which values are the caller's.
+ *   A field the map does not declare has its VALUE passed through verbatim —
+ *   the safe default, because a missed conversion is now a loud 400 from the
+ *   API's sealed `.strict()` schemas, while an over-eager one silently
+ *   corrupts a caller's own data.
  *
- * 2. RESPONSES convert RECURSIVELY by structure, with an explicit exception list
- *    (`OPAQUE_FIELDS`). There is no schema to declare against on the way back —
- *    the server can add fields at any time, and a response object the SDK failed
- *    to convert would be an invisible snake_case island in an otherwise camelCase
- *    result. Recursion is right here precisely because the exception list is the
- *    thing that carries the risk, and it is short and named.
+ * - `RESPONSE_FIELD_MAP` declares, per API object type, which of its fields
+ *   hold customer-controlled data. Those contents are frozen; every other key
+ *   converts. See the note on `OPAQUE_FIELDS` for why the customer-owned set
+ *   is enforced at every depth and not only under its declared object.
+ *
+ * Ambiguity is never resolved silently in EITHER direction: a camelCase key
+ * arriving alongside its snake_case twin throws `ConflictingParametersError`,
+ * on the way out and on the way back.
  *
  * Neither direction ever touches VALUES. Ids, urls, and secrets are strings and
  * stay byte-identical.
@@ -65,46 +69,82 @@ export function isPlainObject(value) {
   return proto === Object.prototype || proto === null;
 }
 
-// ── Customer-owned opaque payloads ────────────────────────────────────────────
+// ── Customer-owned data: declared per API object ──────────────────────────────
 
 /**
- * Fields whose CONTENTS are not ours to rename, in EITHER direction. Their keys
- * round-trip byte-identical: what the caller writes is what the API stores is
- * what the SDK hands back.
+ * THE RESPONSE FIELD MAP. One entry per v1 object type (its `object`
+ * discriminator), declaring which of that object's fields hold data the
+ * CUSTOMER controls. Those fields' contents are not ours to rename — in either
+ * direction.
  *
- * The field name itself is API-owned and still converts (`desired_state` <->
+ * DERIVATION: transcribed from the serializers in
+ * `api/src/routes/platform-v1/*.ts`. A field appears here iff the serializer
+ * emits a `jsonb` column the API stores verbatim, or a
+ * `z.record(z.string(), z.unknown())` the caller supplies.
+ *
+ * WHEN THE API ADDS A FREE-FORM BLOB: add it here. `OPAQUE_FIELDS` below is
+ * computed from this map, so one edit covers both directions.
+ */
+export const RESPONSE_FIELD_MAP = Object.freeze({
+  // distributions.ts serializeDistribution
+  distribution: ["spec", "stats"],
+  // distributions.ts serializeDeployment — adapter/provider-owned placement
+  // config, its observed mirror, and a map keyed by provider-side identifiers.
+  deployment: ["desired_state", "observed_state", "external_ids"],
+  // distributions.ts serializeOperation — `result` embeds a deployment's
+  // external_ids, so the name is declared here too and caught at depth.
+  operation: ["external_ids"],
+  // relationships.ts serializePartnership — customer-extensible terms
+  partnership: ["permissions", "rights", "compensation_defaults"],
+  // relationships.ts serializeEnrollment / serializeConnection
+  // (connection.grants[].permissions is a per-grant permission map)
+  enrollment: ["metadata"],
+  connection: ["metadata", "permissions"],
+  // partners.ts / programs.ts
+  partner: ["metadata"],
+  program: ["metadata"],
+  "program.requirement": ["metadata"],
+  "program.tier": ["metadata"],
+  "program.connect_config": ["metadata"],
+  // telemetry.ts — the caller's own analytics vocabulary
+  performance_event: ["properties"],
+  // No customer-owned fields; listed so the map is a complete census of the
+  // v1 object vocabulary rather than a partial one.
+  "performance.summary": [],
+  event: [],
+  webhook_endpoint: [],
+  payout: [],
+  payout_batch: [],
+  payout_run: [],
+  "payouts.connect_status": [],
+  list: [],
+});
+
+/**
+ * Every customer-owned field name, in BOTH spellings — computed from
+ * RESPONSE_FIELD_MAP so the declaration above is the single source of truth.
+ *
+ * WHY THIS IS ENFORCED GLOBALLY, not only under its declared object type:
+ * JSON carries no types at depth. `operation.result` embeds a deployment's
+ * `external_ids` with no `object` discriminator of its own; a webhook envelope
+ * nests a serialized resource under `data.object`. Scoping the exception
+ * strictly by discriminator would leak customer keys wherever the server nests
+ * a blob one level deeper than we anticipated — and a leak here means silently
+ * renaming data the customer wrote. The declaration says WHERE each blob lives
+ * and is what you edit; the union is how it is enforced.
+ *
+ * The field NAME itself is API-owned and still converts (`desired_state` <->
  * `desiredState`); only what is INSIDE it is frozen.
  *
  * Renaming a caller's `properties.orderId` to `properties.order_id` is exactly
  * the class of silent corruption this whole change exists to eliminate — just
  * pointed at the customer's data instead of ours.
- *
- * Both spellings are listed so the set answers correctly on the request side
- * (caller wrote camelCase) and the response side (server wrote snake_case).
  */
-export const OPAQUE_FIELDS = new Set([
-  // Arbitrary customer key/values. Never read by the API.
-  "metadata",
-  // Arbitrary event properties on performance.events.create — the customer's
-  // own analytics vocabulary.
-  "properties",
-  // The distribution's declarative plan. Adapters read known sub-keys; unknown
-  // ones round-trip untouched, so it is customer-extensible by design.
-  "spec",
-  // Partnership terms: structured, but customer-extensible.
-  "permissions",
-  "rights",
-  "compensation_defaults", "compensationDefaults",
-  // Adapter-specific placement config and its provider-reported mirror. Keys
-  // here belong to whichever provider the deployment runs on, not to us.
-  "desired_state", "desiredState",
-  "observed_state", "observedState",
-  // Map keyed by provider-side identifiers.
-  "external_ids", "externalIds",
-  // Metric-keyed rollup. The keys include customer-defined event types, so this
-  // is a map-like record keyed by user data.
-  "stats",
-]);
+export const OPAQUE_FIELDS = new Set(
+  Object.values(RESPONSE_FIELD_MAP)
+    .flat()
+    .flatMap((field) => [field, toCamelKey(field), toSnakeKey(field)]),
+);
 
 // ── The request field map ─────────────────────────────────────────────────────
 
@@ -227,13 +267,20 @@ function applyRequestDescriptor(value, descriptor, path) {
   return value;
 }
 
-/** The typed client-side error for a camel/snake twin pair. */
-export function conflictingParameters(path, camelKey, snakeKey) {
+/**
+ * The typed error for a camel/snake twin pair, raised in BOTH directions:
+ * client-side before a request is issued, and while deserializing a response
+ * that carried both spellings of one field.
+ */
+export function conflictingParameters(path, camelKey, snakeKey, direction = "request") {
   const at = (key) => (path ? `${path}.${key}` : key);
+  const advice = direction === "response"
+    ? "The API returned both spellings of one field, so its value is ambiguous. " +
+      "This is a server bug — report it with the request id."
+    : "Send one or the other — @boomin/sdk converts camelCase to the snake_case wire form for you.";
   return new ConflictingParametersError(
-    `"${at(camelKey)}" and "${at(snakeKey)}" refer to the same API field. ` +
-      "Send one or the other — @boomin/sdk converts camelCase to the snake_case wire form for you.",
-    { code: "conflicting_parameters", param: at(camelKey), conflictsWith: at(snakeKey) },
+    `"${at(camelKey)}" and "${at(snakeKey)}" refer to the same API field. ${advice}`,
+    { code: "conflicting_parameters", param: at(camelKey), conflictsWith: at(snakeKey), direction },
   );
 }
 
@@ -281,27 +328,31 @@ export function buildQueryString(query) {
 // ── Response deserialization ──────────────────────────────────────────────────
 
 /**
- * Convert an API response to idiomatic camelCase, recursively.
+ * Convert an API response to idiomatic camelCase.
  *
  * - KEYS ONLY. Values — ids, urls, secrets, timestamps — are untouched.
  * - List envelopes come along for free: `{object, data, has_more}` becomes
  *   `{object, data, hasMore}` with every element converted.
- * - Inside an OPAQUE_FIELDS value nothing is renamed at any depth, so a
- *   caller's `properties.orderId` reads back as `properties.orderId`.
- * - If the server ever sent a snake_case key AND its camelCase twin in the same
- *   object, the snake_case one keeps its own name rather than overwriting the
- *   twin: converting must never lose a field.
+ * - Inside a customer-owned field (RESPONSE_FIELD_MAP / OPAQUE_FIELDS) nothing
+ *   is renamed at any depth, so `properties.orderId` reads back as
+ *   `properties.orderId`.
+ * - A snake_case key arriving alongside its camelCase twin THROWS
+ *   `ConflictingParametersError`, exactly as it does on the request side.
+ *   Picking a winner is the sin this work exists to eliminate, and it does not
+ *   become acceptable just because the ambiguity came from the server.
  */
-export function camelCaseResponse(value) {
-  if (Array.isArray(value)) return value.map(camelCaseResponse);
+export function camelCaseResponse(value, path = "") {
+  if (Array.isArray(value)) return value.map((item, index) => camelCaseResponse(item, `${path}.${index}`));
   if (!isPlainObject(value)) return value;
   const converted = {};
   for (const rawKey of Object.keys(value)) {
-    const raw = value[rawKey];
-    const inner = OPAQUE_FIELDS.has(rawKey) ? raw : camelCaseResponse(raw);
     const camel = toCamelKey(rawKey);
-    const collides = camel !== rawKey && Object.prototype.hasOwnProperty.call(value, camel);
-    converted[collides ? rawKey : camel] = inner;
+    if (camel !== rawKey && Object.prototype.hasOwnProperty.call(value, camel)) {
+      throw conflictingParameters(path, camel, rawKey, "response");
+    }
+    converted[camel] = OPAQUE_FIELDS.has(rawKey)
+      ? value[rawKey]
+      : camelCaseResponse(value[rawKey], joinPath(path, camel));
   }
   return converted;
 }

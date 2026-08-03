@@ -10,7 +10,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { camelCaseResponse, toCamelKey, toSnakeKey, OPAQUE_FIELDS } from "../src/core.js";
+import {
+  camelCaseResponse, toCamelKey, toSnakeKey,
+  OPAQUE_FIELDS, RESPONSE_FIELD_MAP,
+} from "../src/core.js";
+import { ConflictingParametersError, InvalidRequestError } from "../src/errors.js";
 import { createClient } from "./helpers.js";
 
 // ── The key rule ──────────────────────────────────────────────────────────────
@@ -100,6 +104,19 @@ test("every opaque field name is listed in BOTH spellings", () => {
   }
 });
 
+test("OPAQUE_FIELDS is exactly the declared RESPONSE_FIELD_MAP, so the map is load-bearing", () => {
+  const declared = new Set(Object.values(RESPONSE_FIELD_MAP).flat());
+  const expected = new Set([...declared].flatMap((f) => [f, toCamelKey(f), toSnakeKey(f)]));
+  assert.deepEqual([...OPAQUE_FIELDS].sort(), [...expected].sort());
+  // The reviewer's named set, spelled out so a deletion cannot pass silently.
+  for (const field of [
+    "metadata", "properties", "spec", "desired_state", "observed_state",
+    "external_ids", "permissions", "rights", "compensation_defaults", "stats",
+  ]) {
+    assert.ok(OPAQUE_FIELDS.has(field), `${field} must be customer-owned`);
+  }
+});
+
 test("an opaque field nested inside an API structure is still opaque", () => {
   const out = camelCaseResponse({
     result: { observed_status: "live", external_ids: { promo_link_id: "l1" } },
@@ -108,10 +125,38 @@ test("an opaque field nested inside an API structure is still opaque", () => {
   assert.deepEqual(out.result.externalIds, { promo_link_id: "l1" });
 });
 
-test("converting never drops a field, even if the server sent both spellings", () => {
-  const out = camelCaseResponse({ value_minor: 1, valueMinor: 2 });
-  assert.equal(out.valueMinor, 2, "the server's explicit camelCase key is preserved");
-  assert.equal(out.value_minor, 1, "and the snake_case one keeps its own name rather than vanishing");
+test("a response carrying BOTH spellings of one field throws — never picks a winner", () => {
+  assert.throws(
+    () => camelCaseResponse({ value_minor: 1, valueMinor: 2 }),
+    (err) => {
+      assert.ok(err instanceof ConflictingParametersError);
+      assert.ok(err instanceof InvalidRequestError);
+      assert.equal(err.code, "conflicting_parameters");
+      assert.equal(err.param, "valueMinor");
+      assert.equal(err.conflictsWith, "value_minor");
+      assert.match(err.message, /server bug/);
+      return true;
+    },
+  );
+});
+
+test("a response collision is named at its real path", () => {
+  assert.throws(
+    () => camelCaseResponse({ object: "list", data: [{ id: "x", value_minor: 1, valueMinor: 2 }] }),
+    (err) => {
+      assert.equal(err.param, "data.0.valueMinor");
+      assert.equal(err.conflictsWith, "data.0.value_minor");
+      return true;
+    },
+  );
+});
+
+test("twin keys INSIDE a customer-owned payload are not a collision — they are your keys", () => {
+  const out = camelCaseResponse({
+    object: "performance_event",
+    properties: { orderId: "1001", order_id: "also mine" },
+  });
+  assert.deepEqual(out.properties, { orderId: "1001", order_id: "also mine" });
 });
 
 test("non-objects and arrays of scalars pass straight through", () => {
@@ -217,6 +262,26 @@ test("operations.wait reads the camelCase waitingReason", async () => {
   await assert.rejects(
     () => boomin.operations.wait("op_1", { timeout: 20, pollInterval: 10 }),
     /funding_required/,
+  );
+});
+
+test("a response collision surfaces as itself, carrying status + requestId", async () => {
+  const { boomin } = createClient([
+    {
+      status: 200,
+      headers: { "request-id": "req_abc" },
+      body: { id: "pev_1", value_minor: 1, valueMinor: 2 },
+    },
+  ]);
+  await assert.rejects(
+    () => boomin.performance.events.create({ deployment: "dep_1", type: "sale" }),
+    (err) => {
+      // NOT swallowed as "malformed JSON" — the JSON parsed fine, the API lied.
+      assert.ok(err instanceof ConflictingParametersError);
+      assert.equal(err.status, 200);
+      assert.equal(err.requestId, "req_abc");
+      return true;
+    },
   );
 });
 

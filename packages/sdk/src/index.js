@@ -74,6 +74,7 @@ export {
   toSnakeKey,
   OPAQUE_FIELDS,
   REQUEST_FIELD_MAP,
+  RESPONSE_FIELD_MAP,
 } from "./casing.js";
 export {
   BoominError,

@@ -42,6 +42,8 @@ export interface BoominErrorDetails {
 export interface ConflictingParametersDetails extends BoominErrorDetails {
   /** The snake_case twin of `param`, at the same path. */
   conflictsWith?: string | null;
+  /** Which side of the wire the ambiguity came from. */
+  direction?: "request" | "response";
 }
 
 /** Base class for every error raised by @boomin/sdk. */
@@ -92,6 +94,10 @@ export class FundingRequiredError extends InvalidRequestError {}
  * discarding the other would hide ambiguous caller intent, which is the exact
  * defect the SDK's casing work exists to eliminate. `status` is null because no
  * HTTP request was ever made.
+ *
+ * The same rule runs on DESERIALIZATION: if a response ever carried both
+ * spellings of one field, the SDK raises this rather than picking a winner
+ * (`direction: "response"`, with `status`/`requestId` set).
  */
 export class ConflictingParametersError extends InvalidRequestError {
   constructor(message?: string, details?: ConflictingParametersDetails);
@@ -99,6 +105,12 @@ export class ConflictingParametersError extends InvalidRequestError {
   readonly param: string | null;
   /** Its snake_case twin, at the same path. */
   readonly conflictsWith: string | null;
+  /**
+   * `"request"` — your params spelled one field two ways (nothing was sent).
+   * `"response"` — the API returned both spellings, so the value is ambiguous;
+   * that is a server bug, and `status`/`requestId` are populated for reporting.
+   */
+  readonly direction: "request" | "response";
 }
 
 /** Thrown by `constructEvent` when signature verification fails. */

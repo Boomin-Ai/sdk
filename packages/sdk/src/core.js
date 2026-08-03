@@ -19,6 +19,7 @@ export {
   toSnakeKey,
   OPAQUE_FIELDS,
   REQUEST_FIELD_MAP,
+  RESPONSE_FIELD_MAP,
 } from "./casing.js";
 
 export const SDK_VERSION = "1.0.0-beta.1";
@@ -156,12 +157,9 @@ export class HttpClient {
         if (response.status === 204) return null;
         const text = await response.text();
         if (text === "") return null;
+        let parsed;
         try {
-          const parsed = JSON.parse(text);
-          // The wire is snake_case; the SDK is camelCase in BOTH directions.
-          // Customer-owned blobs (metadata/properties/spec/…) are exempt — see
-          // OPAQUE_FIELDS in casing.js.
-          return this.rawResponses ? parsed : camelCaseResponse(parsed);
+          parsed = JSON.parse(text);
         } catch (cause) {
           throw new APIError("Boomin API returned a malformed JSON response body.", {
             code: "internal_error",
@@ -169,6 +167,22 @@ export class HttpClient {
             requestId,
             cause,
           });
+        }
+        // Casing is OUTSIDE the JSON try/catch on purpose: camelCaseResponse
+        // throws ConflictingParametersError when the server sends both
+        // spellings of one field, and that must surface as itself, not get
+        // reported as malformed JSON.
+        if (this.rawResponses) return parsed;
+        try {
+          // The wire is snake_case; the SDK is camelCase in BOTH directions.
+          // Customer-owned blobs are exempt — see RESPONSE_FIELD_MAP/casing.js.
+          return camelCaseResponse(parsed);
+        } catch (cause) {
+          if (cause?.code === "conflicting_parameters") {
+            cause.status = response.status;
+            cause.requestId = requestId;
+          }
+          throw cause;
         }
       }
 

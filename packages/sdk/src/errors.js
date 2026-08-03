@@ -57,6 +57,10 @@ export class FundingRequiredError extends InvalidRequestError {}
  * exists to eliminate: ambiguous caller intent resolved out of sight. Explicit
  * snake_case wins only when it is the SOLE spelling supplied.
  *
+ * The identical rule runs on DESERIALIZATION (`direction: "response"`): a
+ * response carrying both spellings of one field is ambiguous, and picking a
+ * winner there is the same sin with the server as the author.
+ *
  * It extends InvalidRequestError on purpose: an existing
  * `catch (e) { if (e instanceof InvalidRequestError) ... }` keeps working, and
  * `e.code === "conflicting_parameters"` names the precise fault — the same
@@ -70,6 +74,8 @@ export class ConflictingParametersError extends InvalidRequestError {
     this.param = details.param ?? null;
     /** Its snake_case twin, at the same path. */
     this.conflictsWith = details.conflictsWith ?? null;
+    /** "request" (nothing was sent) or "response" (the API returned both). */
+    this.direction = details.direction ?? "request";
   }
 }
 
