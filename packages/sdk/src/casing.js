@@ -117,6 +117,29 @@ export const RESPONSE_FIELD_MAP = Object.freeze({
   payout_batch: [],
   payout_run: [],
   "payouts.connect_status": [],
+  // payouts.ts serializeRule — `scope` is API-OWNED (a discriminated
+  // {type, program|collection|unit|member}), so nothing here is frozen.
+  payout_rule: [],
+  // payouts.ts serializeRail / railConfigToWire — `config` is SPLIT, and only
+  // half of it is ours:
+  //
+  //   config.format, config.wallet_funded  API-OWNED. They select a built-in
+  //       CSV template and turn confirm into a guarded wallet debit. They
+  //       convert like every other v1 field (`wallet_funded` <-> walletFunded).
+  //
+  //   config.columns                       CUSTOMER-OWNED. It is the caller's
+  //       own column mapping and it is what a bank reads. Declared here so its
+  //       CONTENTS are frozen at every depth: the entries keep their key names
+  //       (`key`, `header`), their header VALUES, and their array ORDER exactly
+  //       as the API returned them. A "helpfully" re-cased CSV header is a
+  //       different file paying a different column — this is the one field on
+  //       the payout surface where a rename is a money bug, not a cosmetic one.
+  //
+  // The NAME `config` still converts (it is API-owned); only what is inside
+  // `columns` is untouchable. Enforcement is by name at every depth — see the
+  // OPAQUE_FIELDS note — so a `columns` array survives wherever the server
+  // nests it (a rail inside a webhook envelope, say).
+  payout_rail: ["columns"],
   list: [],
 });
 
@@ -225,6 +248,40 @@ export const REQUEST_FIELD_MAP = Object.freeze({
   // api/src/routes/platform-v1/payouts.ts — runSchema / exportSchema: flat.
   "payouts.run": {},
   "payouts.exportCsv": {},
+
+  // payouts.ts — ruleCreateSchema. `scope` is the discriminated API-OWNED
+  // object that replaced the raw applies_to / scope_id / program_id triple:
+  //   ruleScopeSchema = z.object({ type, program, collection?, unit?, member? }).strict()
+  // Every key in it is the API's, so every key converts. It is sealed
+  // server-side, so an unconverted spelling would 400 at `scope.<field>`.
+  "payouts.rules.create": { scope: nested() },
+  // ruleUpdateSchema accepts only {name?, status?} — flat, and every other
+  // field is answered with `immutable_parameter`.
+  "payouts.rules.update": {},
+  "payouts.rules.archive": {},
+
+  // payouts.ts — railCreateSchema / railUpdateSchema.
+  //
+  // `config` is TWO THINGS and is declared as two things (the mirror of the
+  // RESPONSE_FIELD_MAP note above):
+  //   - the config OBJECT is API-owned, so `walletFunded` must go out as
+  //     `wallet_funded` and `format` must reach the sealed schema intact;
+  //   - `columns` is the CALLER'S data and goes out byte-for-byte. A boundary
+  //     that rewrote `{ key, header }` — or a `header` a customer spelled
+  //     "Email Address" — would change the file their bank ingests.
+  //
+  // Declaring the object without declaring `columns` opaque would be the
+  // money bug; declaring nothing at all would send `walletFunded` to a
+  // `.strict()` schema and 400. Both halves are required.
+  "payouts.rails.create": { config: nested({ columns: OPAQUE }) },
+  "payouts.rails.update": { config: nested({ columns: OPAQUE }) },
+
+  // payouts.ts — batchCreateSchema / batchConfirmSchema.
+  // `results` is an API-owned array of sealed {item, status, reason} objects.
+  "payouts.batches.create": {},
+  "payouts.batches.export": {},
+  "payouts.batches.confirm": { results: arrayOf(nested()) },
+  "payouts.batches.cancel": {},
 });
 
 // ── Request serialization ─────────────────────────────────────────────────────

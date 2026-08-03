@@ -115,7 +115,15 @@ const PLATFORM_V1_SCOPES = [
   { scope: "performance:write", category: "platform_v1", description: "Ingest business performance events." },
   { scope: "operations:read", category: "platform_v1", description: "Read operations (default-granted; the progress surface for every mutation)." },
   { scope: "payouts:read", category: "platform_v1", description: "Read payouts, batches, and connect status." },
-  { scope: "payouts:write", category: "platform_v1", description: "Run payout computation and CSV exports." },
+  { scope: "payouts:write", category: "platform_v1", description: "Run payout computation, build batches, export, confirm, and cancel." },
+  // CONFIGURATION is scoped apart from money movement on purpose: a rail's
+  // column mapping decides which field of a payout row lands in the recipient
+  // column of a file a bank ingests. `payouts:write` moves money the brand
+  // already owes; it must not also redirect where that money lands.
+  { scope: "payout_rules:read", category: "platform_v1", description: "Read payout rules (how a partner earns)." },
+  { scope: "payout_rules:write", category: "platform_v1", description: "Create, update, or archive payout rules." },
+  { scope: "payout_rails:read", category: "platform_v1", description: "Read payout rails and their delivery config." },
+  { scope: "payout_rails:write", category: "platform_v1", description: "Configure payout rails (where money physically lands)." },
   { scope: "partners:read", category: "platform_v1", description: "Read partner identities." },
   { scope: "handoff:read", category: "platform_v1", description: "Read program handoff configs (v1 tree)." },
 ];
@@ -202,6 +210,28 @@ function parseArgs(argv) {
       "brand",
       "distribution",
       "deployment",
+      // Payout configuration (CLI 0.4.0). `--wallet-funded` and `--default`
+      // are deliberately absent: they are bare booleans (`--default=false`
+      // still works, since an `=` value is read before this list is consulted).
+      "rail",
+      "config",
+      "format",
+      "columns",
+      "scope",
+      "scopeType",
+      "collection",
+      "unit",
+      "member",
+      "metricKey",
+      "rateBps",
+      "perUnitMinor",
+      "threshold",
+      "bonusMinor",
+      "windowKey",
+      "windowDays",
+      "currency",
+      "externalBatchRef",
+      "results",
     ].includes(key);
     const value = rawValue ?? (takesValue ? argv[++index] : true);
     if (key === "origin") out.origins.push(String(value));
@@ -677,12 +707,43 @@ Usage:
 Usage:
   npx @boomin/cli payout list [--status pending|awaiting_account|processing|paid|failed] [--period-start YYYY-MM-DD --period-end YYYY-MM-DD]
   npx @boomin/cli payout run --period-start YYYY-MM-DD --period-end YYYY-MM-DD
-  npx @boomin/cli payout export [--out payouts.csv] [--period-start YYYY-MM-DD --period-end YYYY-MM-DD]
+  npx @boomin/cli payout export [--out payouts.csv] [--period-start YYYY-MM-DD --period-end YYYY-MM-DD] [--no-wait]
   npx @boomin/cli payout connect
 
-run recomputes the period's payout rows; export builds a csv_batch over
-eligible rows and returns (or downloads with --out) the operator CSV;
-connect shows payout rails + the Stripe Connect account rollup.
+Configuration — how a partner EARNS (scope: payout_rules:read|write):
+  npx @boomin/cli payout rules list [--program prog_...] [--status active|paused|archived] [--type revenue_split|cpa|threshold_bonus]
+  npx @boomin/cli payout rules create --name "Rev share" --type revenue_split --program prog_... --rate-bps 2000
+  npx @boomin/cli payout rules create --name "Registration CPA" --type cpa --program prog_... --metric-key event_registration --per-unit-minor 500
+  npx @boomin/cli payout rules show <prule_id>
+  npx @boomin/cli payout rules update <prule_id> [--name "..."] [--status active|paused|archived]
+  npx @boomin/cli payout rules archive <prule_id>
+
+Configuration — how money LEAVES (scope: payout_rails:read|write):
+  npx @boomin/cli payout rails list
+  npx @boomin/cli payout rails create --rail csv_batch --format paypal_payouts_csv [--default] [--wallet-funded] [--columns '[{"key":"email","header":"Email Address"}]']
+  npx @boomin/cli payout rails show <prail_id>
+  npx @boomin/cli payout rails update <prail_id> [--config '{...}'] [--status active|disabled] [--default]
+
+Disbursement runs (scope: payouts:read|write):
+  npx @boomin/cli payout batches list
+  npx @boomin/cli payout batches show <pbatch_id>
+  npx @boomin/cli payout batches create [--rail csv_batch] [--period-start YYYY-MM-DD --period-end YYYY-MM-DD]
+  npx @boomin/cli payout batches export <pbatch_id> [--out payouts.csv] [--no-wait]
+  npx @boomin/cli payout batches confirm <pbatch_id> [--external-batch-ref PAYPAL-2026-08] [--results '[{"item":"pbi_1","status":"paid"}]'] [--no-wait]
+  npx @boomin/cli payout batches cancel <pbatch_id>
+
+run recomputes the period's payout rows and prints its outcome plus the
+counters; it EXITS NON-ZERO when the brand has no active rule and no active
+content split (payout_rules_required), because a configuration error must fail
+a script rather than look like a month with nothing owed.
+
+export is build + export in one call. The export itself is an Operation, so the
+command polls it to a terminal status and then reads the batch for the
+presigned download_url (re-minted on every read); --out writes that file, and a
+failed operation exits non-zero rather than leaving an empty path behind.
+
+A rule's economics are frozen once it exists — update takes --name/--status
+only. To change money: create a replacement rule, then archive the old one.
 `);
     return;
   }
@@ -740,6 +801,9 @@ Platform v1 (distribution infrastructure — see \`help <group>\`):
   npx @boomin/cli partnership list|get|pause|resume|end
   npx @boomin/cli connection list|get|revoke
   npx @boomin/cli payout list|run|export|connect
+  npx @boomin/cli payout rules list|create|show|update|archive
+  npx @boomin/cli payout rails list|create|show|update
+  npx @boomin/cli payout batches list|show|create|export|confirm|cancel
   npx @boomin/cli webhook create|list|delete|rotate-secret
   npx @boomin/cli events list --type <event.type>
 

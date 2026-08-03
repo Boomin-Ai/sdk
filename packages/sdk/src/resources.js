@@ -433,7 +433,116 @@ export class WebhooksClient extends ResourceClient {
   }
 }
 
+/**
+ * `payouts.rules` — how a partner EARNS.
+ *
+ * Nested under `payouts` on purpose. Distribution is the flagship primitive and
+ * payouts is one supporting system; rules, rails and batches are PARTS of it,
+ * not three more top-level nouns competing with it. The REST tree is nested the
+ * same way (`/payouts/rules`), so the client mirrors the URL.
+ */
+class PayoutRulesClient extends ResourceClient {
+  /**
+   * Create a rule. `scope` is a discriminated object
+   * (`{ type: "program"|"collection"|"unit"|"member", program, … }`), never a
+   * raw applies_to/scope_id pair — an incoherent combination cannot be spelled.
+   * Money is `perUnitMinor` / `bonusMinor` (minor units of the rule's
+   * `currency`), never cents.
+   */
+  create(params, options) {
+    return this._http.post("/payouts/rules", params, options, "payouts.rules.create");
+  }
+
+  retrieve(id, options) {
+    return this._http.get(`/payouts/rules/${pathParam(id, "id")}`, undefined, options);
+  }
+
+  list(params, options) {
+    return this._list("/payouts/rules", params, options);
+  }
+
+  /**
+   * Update — `name` and `status` ONLY.
+   *
+   * A rule's economics are immutable after creation: the payouts ledger
+   * references the rule that produced each row, so editing a rate would
+   * re-interpret settled history. Sending one throws `ImmutableParameterError`
+   * naming the frozen concept. To change money, create a replacement rule,
+   * activate it, then `archive` this one.
+   */
+  update(id, params, options) {
+    return this._http.post(`/payouts/rules/${pathParam(id, "id")}`, params, options, "payouts.rules.update");
+  }
+
+  /**
+   * Archive — the "remove this rule" verb, and deliberately NOT `del()`.
+   *
+   * `payouts.rule_id` cascades on delete, so a hard delete would take every
+   * ledger row the rule ever produced with it: the money would still have been
+   * paid and the record of why would be gone. Archiving stops the rule firing
+   * on the next run and leaves history readable. Idempotent.
+   */
+  archive(id, params, options) {
+    return this._http.post(
+      `/payouts/rules/${pathParam(id, "id")}/archive`,
+      params ?? {},
+      options,
+      "payouts.rules.archive",
+    );
+  }
+}
+
+/**
+ * `payouts.rails` — how money physically LEAVES.
+ *
+ * `config.columns` is YOUR data: the SDK sends it and reads it back
+ * byte-for-byte, headers and order intact (see casing.js). `config.format` and
+ * `config.walletFunded` are the API's and convert like any other field.
+ */
+class PayoutRailsClient extends ResourceClient {
+  /**
+   * Create — NOT an upsert. A second create for a configured rail throws
+   * `PayoutRailAlreadyExistsError`, so a call that reads as "add a rail" can
+   * never silently rewrite where money lands. Use `update` explicitly.
+   */
+  create(params, options) {
+    return this._http.post("/payouts/rails", params, options, "payouts.rails.create");
+  }
+
+  retrieve(id, options) {
+    return this._http.get(`/payouts/rails/${pathParam(id, "id")}`, undefined, options);
+  }
+
+  list(params, options) {
+    return this._list("/payouts/rails", params, options);
+  }
+
+  /**
+   * Update. `config` REPLACES the stored object wholesale — there is no merge,
+   * because a merge cannot express "remove this key" and a half-applied column
+   * mapping is a file that pays the wrong column.
+   */
+  update(id, params, options) {
+    return this._http.post(`/payouts/rails/${pathParam(id, "id")}`, params, options, "payouts.rails.update");
+  }
+}
+
+/** `payouts.batches` — one frozen disbursement run. */
 class PayoutBatchesClient extends ResourceClient {
+  /**
+   * Build (freeze) a batch over the eligible rows — SYNCHRONOUS, resolving the
+   * batch plus its `items` and `skipped`. Omit `rail` to use the brand's
+   * default rail; with none configured this throws `PayoutRailRequiredError`.
+   */
+  create(params, options) {
+    return this._http.post("/payouts/batches", params ?? {}, options, "payouts.batches.create");
+  }
+
+  /**
+   * Retrieve — and the home of `downloadUrl`, which is re-minted on every read
+   * of a batch that has an artifact. A URL returned once by `export` would
+   * already be expiring by the time an operator opened it.
+   */
   retrieve(id, options) {
     return this._http.get(`/payouts/batches/${pathParam(id, "id")}`, undefined, options);
   }
@@ -441,11 +550,58 @@ class PayoutBatchesClient extends ResourceClient {
   list(params, options) {
     return this._list("/payouts/batches", params, options);
   }
+
+  /**
+   * Export the batch's file to storage — 202, resolving
+   * `{ batch, status: "exporting", operation }` as id STRINGS. Follow the
+   * operation (`boomin.operations.wait`), then read the batch for `downloadUrl`.
+   * Repeating the call replays the same operation and the same object key: one
+   * batch can never produce two artifacts.
+   */
+  export(id, params, options) {
+    return this._http.post(
+      `/payouts/batches/${pathParam(id, "id")}/export`,
+      params ?? {},
+      options,
+      "payouts.batches.export",
+    );
+  }
+
+  /**
+   * Record the outcome of a disbursement — 202,
+   * `{ batch, status: "confirming", operation }`.
+   *
+   * An Operation because the work is unbounded: item count has no cap and each
+   * item settles individually (plus a guarded wallet debit each when the rail
+   * is `walletFunded`), which would exceed a Worker's subrequest budget and die
+   * mid-settlement. Repeating a confirm with the SAME `externalBatchRef`
+   * replays one operation, so a retry after a timeout cannot settle twice.
+   */
+  confirm(id, params, options) {
+    return this._http.post(
+      `/payouts/batches/${pathParam(id, "id")}/confirm`,
+      params ?? {},
+      options,
+      "payouts.batches.confirm",
+    );
+  }
+
+  /** Cancel (unfreeze) a batch — synchronous, resolves the batch. */
+  cancel(id, params, options) {
+    return this._http.post(
+      `/payouts/batches/${pathParam(id, "id")}/cancel`,
+      params ?? {},
+      options,
+      "payouts.batches.cancel",
+    );
+  }
 }
 
 export class PayoutsClient extends ResourceClient {
   constructor(http) {
     super(http);
+    this.rules = new PayoutRulesClient(http);
+    this.rails = new PayoutRailsClient(http);
     this.batches = new PayoutBatchesClient(http);
   }
 
@@ -453,17 +609,39 @@ export class PayoutsClient extends ResourceClient {
     return this._list("/payouts", params, options);
   }
 
-  /** Run disbursement over eligible payouts — returns a batch + operation. */
+  /**
+   * Recompute the period's payout rows.
+   *
+   * Resolves `{ outcome, rules_evaluated…, payouts, summary }`: branch on
+   * `outcome` (`"payouts_created"` | `"no_eligible_activity"`), never on a
+   * count. A brand with no active rule and no active split throws
+   * `PayoutRulesRequiredError` (409) instead of answering zero — "misconfigured"
+   * and "nothing owed" are different answers and used to be the same one.
+   */
   run(params, options) {
     return this._http.post("/payouts/run", params ?? {}, options, "payouts.run");
   }
 
-  /** Export eligible payouts on the csv_batch rail. */
+  /**
+   * Build + export in one call on the csv_batch rail — 202, resolving
+   * `{ batch, status: "exporting", operation, items, skipped }` where `batch`
+   * and `operation` are id STRINGS.
+   *
+   * The build half is synchronous, so `PayoutRailRequiredError` and
+   * `PayoutBatchEmptyError` still come back immediately and typed. The download
+   * URL is NOT here: follow the operation, then read
+   * `payouts.batches.retrieve(batch).downloadUrl`.
+   */
   exportCsv(params, options) {
     return this._http.post("/payouts/export_csv", params ?? {}, options, "payouts.exportCsv");
   }
 
-  /** Stripe Connect payout-account status for the brand's partners. */
+  /**
+   * Disbursement readiness: rails (identity and state only) + the Stripe
+   * Connect account rollup. Rail `config` is NOT here — it is a
+   * `payout_rails:read` surface, because a column mapping decides where money
+   * lands. Read it with `payouts.rails.list()`.
+   */
   connectStatus(params, options) {
     return this._http.get("/payouts/connect_status", params, options);
   }

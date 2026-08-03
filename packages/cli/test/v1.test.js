@@ -271,15 +271,22 @@ test("--json prints the SDK's camelCase objects, not the raw wire body", async (
   });
 });
 
-test("payout export writes the CSV from the camelCase downloadUrl", async () => {
+test("payout export accepts a 202, polls the operation, then reads the batch", async () => {
+  // The 202 carries id STRINGS and no URL; download_url is minted on READ of
+  // the batch, so the command has to make the second call to find the file.
   const fetchImpl = createMockFetch([
-    { status: 201, body: { id: "pb_1", status: "exported", export_file_key: "k", download_url: null } },
+    { status: 202, body: { batch: "pb_1", status: "exporting", operation: "op_1", items: [{ id: "pbi_1" }], skipped: [] } },
+    { status: 200, body: { id: "op_1", status: "succeeded", kind: "payout_batch.export" } },
+    { status: 200, body: { id: "pb_1", status: "exported", export_file_key: "k", download_url: "https://r2.test/pb_1.csv" } },
   ]);
   const log = createLogCapture();
-  await run("payout", "export", { periodStart: "2026-08-01", periodEnd: "2026-09-01" }, fetchImpl, log);
+  await run("payout", "export", { periodStart: "2026-08-01", periodEnd: "2026-09-01", pollInterval: 0.001 }, fetchImpl, log);
   // periodStart/periodEnd went out as the snake_case wire form.
   assert.deepEqual(fetchImpl.calls[0].body, { period_start: "2026-08-01", period_end: "2026-09-01" });
+  assert.equal(new URL(fetchImpl.calls[1].url).pathname, "/v1/platform/operations/op_1");
+  assert.equal(new URL(fetchImpl.calls[2].url).pathname, "/v1/platform/payouts/batches/pb_1");
   assert.match(log.text(), /Export key: k/);
+  assert.match(log.text(), /Download: https:\/\/r2\.test\/pb_1\.csv/);
 });
 
 test("webhook create sends enabledEvents and renders the camelCase echo", async () => {
