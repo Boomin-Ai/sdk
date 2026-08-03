@@ -53,12 +53,10 @@ you read camelCase properties back. The REST wire is snake_case; translating is
 the SDK's job, not yours.
 
 ```js
-const event = await boomin.performance.events.create({
-  deployment: "dep_123",
-  type: "sale",
-  valueMinor: 4999,          // → value_minor on the wire
-  idempotencyKey: "evt_123", // → idempotency_key
-});
+const event = await boomin.performance.events.create(
+  { deployment: "dep_123", type: "sale", valueMinor: 4999 }, // → value_minor
+  { idempotencyKey: "evt_123" },                             // → Idempotency-Key header
+);
 
 event.valueMinor; // 4999      ← wire field value_minor
 event.receivedAt; //           ← wire field received_at
@@ -133,6 +131,27 @@ await boomin.distributions.launch(id, {}, {
   maxRetries: 0,
 });
 ```
+
+### Idempotency is header-canonical
+
+Every mutation carries an `Idempotency-Key` header — auto-generated per call,
+or yours via the per-call option above. **There is no body idempotency field.**
+Writing `idempotencyKey` into a *params* object makes it an unknown body field,
+and the API answers `400 invalid_request`:
+
+```js
+// ✗ 400 — idempotency_key is not a body field
+await boomin.distributions.create({ name: "Spring launch", idempotencyKey: "k" });
+
+// ✓ header
+await boomin.distributions.create({ name: "Spring launch" }, { idempotencyKey: "k" });
+```
+
+The same option supplies `performance.events.create` its ingest identity, so
+one concept covers HTTP replay and measurement de-duplication.
+
+Nothing mutates as a side effect of inspection: `distributions.validate(id)` is
+the non-mutating way to check a distribution before you launch it.
 
 ### Pagination
 

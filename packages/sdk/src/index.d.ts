@@ -46,8 +46,14 @@ export interface BoominOptions {
 
 export interface RequestOptions {
   /**
-   * Idempotency key for this mutation. Auto-generated (crypto.randomUUID)
-   * when omitted; pass your own to make cross-process retries idempotent.
+   * Idempotency key for this mutation. Travels in the `Idempotency-Key`
+   * HEADER — never in the body. Auto-generated (crypto.randomUUID) when
+   * omitted; pass your own to make cross-process retries idempotent, and to
+   * give `performance.events.create` its ingest identity.
+   *
+   * Idempotency is header-canonical across the v1 tree: an `idempotencyKey`
+   * written into a PARAMS object is just an unknown body field, and the API
+   * answers 400 `invalid_request`.
    */
   idempotencyKey?: string;
   /** Per-call `Boomin-Brand` override. */
@@ -752,9 +758,13 @@ export interface PerformanceEventCreateParams {
   currency?: string | null;
   quantity?: number;
   occurredAt?: string;
-  /** One of `externalEventId` / `idempotencyKey` is required (ingest identity). */
+  /**
+   * Ingest identity. Supply this, OR the per-call `{ idempotencyKey }` request
+   * option — which travels in the `Idempotency-Key` HEADER. There is no body
+   * `idempotencyKey`: idempotency is header-canonical across the whole v1 tree,
+   * and sending it in a body is a 400.
+   */
   externalEventId?: string;
-  idempotencyKey?: string;
   /** Free-form — stored verbatim, never key-rewritten. */
   properties?: Record<string, unknown>;
 }

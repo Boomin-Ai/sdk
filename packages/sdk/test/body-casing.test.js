@@ -215,12 +215,64 @@ test("distributions.create sends spec verbatim while converting around it", asyn
   const { boomin, calls } = createClient([{ status: 201, body: { id: "dist_1" } }]);
   await boomin.distributions.create({
     name: "Launch",
-    idempotencyKey: "seed-key-1234",
+    objective: "acquisition",
     spec: { enrollmentPolicy: "all_approved", destinationUrl: "https://x.com" },
   });
   const body = lastCall(calls).body;
-  assert.equal(body.idempotency_key, "seed-key-1234");
+  assert.equal(body.name, "Launch");
   assert.deepEqual(body.spec, { enrollmentPolicy: "all_approved", destinationUrl: "https://x.com" });
+});
+
+// ── Idempotency is header-canonical ───────────────────────────────────────────
+
+test("the idempotencyKey OPTION lands in the header and never in the body", async () => {
+  const { boomin, calls } = createClient([{ status: 201, body: { id: "dist_1" } }]);
+  await boomin.distributions.create({ name: "Launch" }, { idempotencyKey: "launch_customer_123" });
+  const call = lastCall(calls);
+  assert.equal(call.headers["Idempotency-Key"], "launch_customer_123");
+  assert.deepEqual(call.body, { name: "Launch" }, "no idempotency field is added to the body");
+});
+
+test("every mutation carries an Idempotency-Key header even when none is supplied", async () => {
+  const { boomin, calls } = createClient([{ status: 202, body: {} }]);
+  await boomin.distributions.launch("dist_1");
+  assert.match(lastCall(calls).headers["Idempotency-Key"], /^[0-9a-f-]{36}$/);
+});
+
+test("an idempotencyKey written into PARAMS is just a body field — the API rejects it", async () => {
+  // The SDK deliberately does NOT rescue this into the header: idempotency is
+  // header-canonical, and a body idempotency_key must fail loudly rather than
+  // work by accident on one client and not another.
+  const { boomin, calls } = createClient([{ status: 201, body: { id: "dist_1" } }]);
+  await boomin.distributions.create({ name: "Launch", idempotencyKey: "in_the_body" });
+  assert.equal(lastCall(calls).body.idempotency_key, "in_the_body");
+  assert.notEqual(lastCall(calls).headers["Idempotency-Key"], "in_the_body");
+});
+
+test("performance.events.create takes its ingest identity from the header option", async () => {
+  const { boomin, calls } = createClient([{ status: 201, body: {} }]);
+  await boomin.performance.events.create(
+    { deployment: "dep_1", type: "sale", valueMinor: 4999 },
+    { idempotencyKey: "evt_123" },
+  );
+  const call = lastCall(calls);
+  assert.equal(call.headers["Idempotency-Key"], "evt_123");
+  assert.deepEqual(call.body, { deployment: "dep_1", type: "sale", value_minor: 4999 });
+});
+
+test("the SDK surface carries no dryRun anywhere — validate() is the non-mutating path", async () => {
+  const { boomin, calls } = createClient([{ status: 200, body: { id: "dist_1", valid: true } }]);
+  await boomin.distributions.validate("dist_1");
+  assert.equal(lastCall(calls).url, "https://api.boomin.ai/v1/platform/distributions/dist_1/validate");
+  const source = await import("node:fs/promises").then((fs) =>
+    Promise.all(
+      ["core.js", "casing.js", "resources.js", "index.js", "index.d.ts", "errors.js", "webhooks.js"]
+        .map((f) => fs.readFile(new URL(`../src/${f}`, import.meta.url), "utf8")),
+    ),
+  );
+  for (const text of source) {
+    assert.doesNotMatch(text, /dryRun|dry_run/, "dryRun was removed from the SDK entirely");
+  }
 });
 
 // ── webhook_endpoints envelope ────────────────────────────────────────────────
