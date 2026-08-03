@@ -48,18 +48,68 @@ resource.
 
 ### Field naming
 
-Write params in camelCase or snake_case; the SDK converts the **top level** of
-every query string and request body to the API's snake_case wire form
-(`enabledEvents` → `enabled_events`, `startingAfter` → `starting_after`).
+**The SDK is camelCase in both directions.** You write camelCase params, and
+you read camelCase properties back. The REST wire is snake_case; translating is
+the SDK's job, not yours.
 
-Conversion is **top level only, by design**. Nested values — `spec`,
-`metadata`, `properties`, `permissions`, `rights` — are your payloads and are
-sent through byte-for-byte, so nothing you store gets renamed. An explicitly
-written snake_case key always wins over a camelCase twin.
+```js
+const event = await boomin.performance.events.create({
+  deployment: "dep_123",
+  type: "sale",
+  valueMinor: 4999,          // → value_minor on the wire
+  idempotencyKey: "evt_123", // → idempotency_key
+});
 
-The v1 API rejects fields it does not recognize (`400 invalid_request`, naming
-the field and, where it can tell, the field you meant) rather than dropping
-them — so a typo is never a silent no-op.
+event.valueMinor; // 4999      ← wire field value_minor
+event.receivedAt; //           ← wire field received_at
+```
+
+Requests convert by **declared schema**, not by guesswork. The nested structures
+the API owns — `subjects[]` and `budget` on `distributions.create/update` —
+convert too:
+
+```js
+await boomin.distributions.create({
+  name: "Spring launch",
+  subjects: [{ kind: "event", id: "…", role: "primary" }],
+  budget: { mode: "funded", asset: "credit", totalMinor: 10000 }, // → total_minor
+});
+```
+
+**Your payloads are never renamed, in either direction.** These fields are
+opaque: their keys round-trip byte-identical, at any depth.
+
+`metadata` · `properties` · `spec` · `permissions` · `rights` ·
+`compensationDefaults` · `desiredState` · `observedState` · `externalIds` ·
+`stats`
+
+```js
+await boomin.performance.events.create({
+  deployment: "dep_123", type: "sale",
+  properties: { orderId: "1001", customerTier: "gold" }, // stored exactly so
+});
+```
+
+Snake_case params are still accepted — but **only one spelling per field**.
+Sending both throws before the request is issued:
+
+```js
+boomin.webhooks.endpoints.create({
+  url: "https://example.com/hook",
+  enabledEvents: ["payout.settled"],
+  enabled_events: ["distribution.live"],
+});
+// ConflictingParametersError (code: conflicting_parameters)
+//   "enabledEvents" and "enabled_events" refer to the same API field.
+```
+
+The v1 API also rejects fields it does not recognize (`400 invalid_request`,
+naming the field and, where it can tell, the field you meant) rather than
+dropping them — so a typo is never a silent no-op.
+
+Need the wire objects verbatim (proxying, logging)? Construct the client with
+`rawResponses: true` and every response comes back in its snake_case form.
+Request conversion is unaffected.
 
 ### Client options
 
@@ -69,6 +119,7 @@ const boomin = new Boomin("sk_live_...", {
   brand: "acme",                    // brand id or slug; threads Boomin-Brand
   maxRetries: 2,                    // retries on 429/5xx (idempotent requests only)
   timeout: 30000,                   // per-request timeout, ms
+  rawResponses: false,              // true → snake_case wire objects, unconverted
 });
 ```
 
@@ -85,14 +136,17 @@ await boomin.distributions.launch(id, {}, {
 
 ### Pagination
 
-List calls resolve one page (`{ object: "list", data, has_more }`) and are also
-async-iterable across every page:
+List calls resolve one page (`{ object: "list", data, hasMore }` — the wire's
+`has_more`, camelCased like everything else) and are also async-iterable across
+every page:
 
 ```js
 const page = await boomin.partnerships.list({ limit: 20 });
+page.hasMore; // boolean
 
 for await (const enrollment of boomin.enrollments.list({ program: "prog_123" })) {
   // auto-pagination via starting_after
+  enrollment.approvalStatus; // ← wire field approval_status
 }
 ```
 
@@ -117,8 +171,13 @@ try {
 All errors extend `BoominError` (`code`, `status`, `requestId`). Subclasses:
 `AuthenticationError`, `PermissionError`, `InvalidRequestError`,
 `RateLimitError`, `ConflictError`, `APIError`, plus distinctly typed
-`OperationConflictError`, `BandLimitReachedError`, `FundingRequiredError`, and
-`WebhookSignatureVerificationError`.
+`OperationConflictError`, `BandLimitReachedError`, `FundingRequiredError`,
+`ConflictingParametersError`, and `WebhookSignatureVerificationError`.
+
+`ConflictingParametersError` is the one raised **client-side, before anything is
+sent** — `status` is `null`, `param` names the camelCase spelling and
+`conflictsWith` its snake_case twin. It extends `InvalidRequestError`, so an
+existing 400-family catch keeps working.
 
 ### Webhooks
 
@@ -137,7 +196,10 @@ export default {
       env.BOOMIN_WEBHOOK_SECRET, // or [oldSecret, newSecret] during rotation
       { tolerance: 300 },
     );
-    if (event.type === "distribution.live") { /* ... */ }
+    // Verified events are camelCased like every other SDK value.
+    if (event.type === "distribution.live") {
+      event.data.object.planHash; // ← wire field plan_hash
+    }
     return new Response("ok");
   },
 };
@@ -153,6 +215,7 @@ const endpoint = await boomin.webhooks.endpoints.create({
   enabledEvents: ["distribution.live", "payout.settled"],
 });
 console.log(endpoint.id, endpoint.secret); // whsec_… — shown ONLY here
+console.log(endpoint.enabledEvents);       // ← wire field enabled_events
 ```
 
 `enabledEvents: []` (or omitting it) subscribes the endpoint to **every** public
@@ -176,6 +239,13 @@ event type. Then `.list()`, `.retrieve()`, `.update()`, `.rotateSecret()`, `.del
 | `payouts` | `list` `run` `exportCsv` `connectStatus` + `batches.list/retrieve` |
 
 `resume` is the canonical verb on every surface — never `unpause`.
+
+## Contributing
+
+`src/casing.js` is the single boundary between camelCase and the snake_case
+wire. When the API grows a new **nested** request structure, declare it in
+`REQUEST_FIELD_MAP` there; when it grows a new customer-owned free-form blob,
+add it to `OPAQUE_FIELDS`. Nothing else in the package makes a casing decision.
 
 ## License
 

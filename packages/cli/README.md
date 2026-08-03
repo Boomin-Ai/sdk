@@ -17,7 +17,7 @@ The installed binary is `boomin`.
 
 ## Platform v1 (0.3.0)
 
-Command groups over the live `/v1/platform` REST tree (driven through `@boomin/sdk`); auth via `--token sk_boomin_live_...` or `BOOMIN_PLATFORM_TOKEN`. `--json` prints the raw API objects.
+Command groups over the live `/v1/platform` REST tree (driven through `@boomin/sdk`); auth via `--token sk_boomin_live_...` or `BOOMIN_PLATFORM_TOKEN`. `--json` prints the SDK's objects — **camelCase** (`hasMore`, `approvalStatus`, `amountCents`), matching the flags you type. The REST wire underneath stays snake_case.
 
 ```bash
 npx @boomin/cli distribution create --name "Launch" --objective acquisition --programs prog_... \
