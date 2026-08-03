@@ -16,6 +16,8 @@ import Boomin, {
 import { constructEvent as constructEventSubpath } from "../src/webhooks.js";
 import {
   BoominError,
+  ConflictingParametersError,
+  InvalidRequestError,
   OperationConflictError,
   FundingRequiredError,
   type BoominErrorCode,
@@ -42,13 +44,13 @@ async function exercise(): Promise<void> {
   const _status: "pending" | "running" | "waiting" | "succeeded" | "partial" | "failed" | "canceled" = settled.status;
 
   const enrollment: Enrollment = await boomin.enrollments.create({ program: "prog_1", email: "a@b.c" });
-  const _approval: "pending" | "approved" | "rejected" = enrollment.approval_status;
+  const _approval: "pending" | "approved" | "rejected" = enrollment.approvalStatus;
   const partnership: Partnership = await boomin.partnerships.resume("ptn_1");
   const _pstatus: "pending" | "active" | "paused" | "ended" = partnership.status;
 
   // pagination: page envelope + async iteration
   const page: List<Enrollment> = await boomin.enrollments.list({ program: "prog_1", limit: 10 });
-  const _hasMore: boolean = page.has_more;
+  const _hasMore: boolean = page.hasMore;
   for await (const item of boomin.events.list({ type: "distribution.live", startingAfter: "evt_1" })) {
     const _event: BoominEvent = item;
   }
@@ -59,8 +61,25 @@ async function exercise(): Promise<void> {
   await boomin.performance.events.create({ deployment: "dep_1", type: "sale", valueMinor: 100, externalEventId: "order_1" });
   const endpoint = await boomin.webhooks.endpoints.create({ url: "https://x.com/wh", enabledEvents: ["payout.settled"] });
   const _secret: string | undefined = endpoint.secret;
+  const _events: string[] | undefined = endpoint.enabledEvents;
   await boomin.payouts.run({ periodStart: "2026-08-01", periodEnd: "2026-08-31" });
   await boomin.payouts.batches.retrieve("pb_1");
+
+  // responses are camelCase all the way down
+  const _receivedAt: string | undefined = (
+    await boomin.performance.events.create({ deployment: "dep_1", type: "sale", valueMinor: 1 })
+  ).receivedAt;
+  const _planHash: string | null | undefined = distribution.planHash;
+  const _waiting: string | null | undefined = settled.waitingReason;
+  const _createdAt: string | undefined = enrollment.createdAt;
+  const _batchUrl: string | null | undefined = (await boomin.payouts.exportCsv({})).downloadUrl;
+  // …except inside customer-owned blobs, whose keys round-trip verbatim.
+  const _specKey: unknown = distribution.spec?.enrollment_policy;
+  void [_receivedAt, _planHash, _waiting, _createdAt, _batchUrl, _specKey];
+
+  // raw escape hatch: same client, wire-shaped objects
+  const rawClient = new Boomin("sk_live_x", { rawResponses: true });
+  void rawClient;
 
   // static + subpath webhook verify are both async
   const evt: BoominEvent = await Boomin.webhooks.constructEvent("{}", "t=1,v1=a", "whsec_1", { tolerance: 300 });
@@ -77,6 +96,11 @@ async function exercise(): Promise<void> {
       const _requestId: string | null = err.requestId;
     } else if (err instanceof FundingRequiredError) {
       const _status2: number | null = err.status;
+    } else if (err instanceof ConflictingParametersError) {
+      // Client-side, pre-flight: both spellings of one field were supplied.
+      const _conflict: string | null = err.conflictsWith;
+      const _isInvalidRequest: InvalidRequestError = err;
+      void [_conflict, _isInvalidRequest];
     } else if (err instanceof BoominError) {
       void err.param;
     }

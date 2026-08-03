@@ -24,9 +24,10 @@ export type BoominErrorCode =
   | "internal_error"
   | "connection_error"
   | "request_timeout"
-  // SDK-local codes
+  // SDK-local codes (raised client-side, never seen on the wire)
   | "operation_wait_timeout"
   | "webhook_signature_invalid"
+  | "conflicting_parameters"
   | (string & {});
 
 export interface BoominErrorDetails {
@@ -36,6 +37,11 @@ export interface BoominErrorDetails {
   param?: string | null;
   raw?: unknown;
   cause?: unknown;
+}
+
+export interface ConflictingParametersDetails extends BoominErrorDetails {
+  /** The snake_case twin of `param`, at the same path. */
+  conflictsWith?: string | null;
 }
 
 /** Base class for every error raised by @boomin/sdk. */
@@ -49,7 +55,11 @@ export class BoominError extends Error {
   readonly requestId: string | null;
   /** Offending parameter, when the API names one. */
   readonly param: string | null;
-  /** The raw `error` object from the response body, when parseable. */
+  /**
+   * The raw `error` object from the response body, when parseable.
+   * Deliberately NOT camelCased — `code`, `status`, `requestId` and `param`
+   * above are the camelCase reading of it.
+   */
   readonly raw: unknown;
 }
 
@@ -72,6 +82,24 @@ export class OperationConflictError extends ConflictError {}
 export class BandLimitReachedError extends InvalidRequestError {}
 /** code `funding_required` — the action needs wallet funds (operation waits). */
 export class FundingRequiredError extends InvalidRequestError {}
+
+/**
+ * code `conflicting_parameters` — raised CLIENT-SIDE, before any request goes
+ * out, when a params object spells one API field two ways:
+ * `{ enabledEvents: A, enabled_events: B }`.
+ *
+ * Explicit snake_case wins only when it is the SOLE spelling supplied; silently
+ * discarding the other would hide ambiguous caller intent, which is the exact
+ * defect the SDK's casing work exists to eliminate. `status` is null because no
+ * HTTP request was ever made.
+ */
+export class ConflictingParametersError extends InvalidRequestError {
+  constructor(message?: string, details?: ConflictingParametersDetails);
+  /** The camelCase spelling that collided, at its full path. */
+  readonly param: string | null;
+  /** Its snake_case twin, at the same path. */
+  readonly conflictsWith: string | null;
+}
 
 /** Thrown by `constructEvent` when signature verification fails. */
 export class WebhookSignatureVerificationError extends BoominError {

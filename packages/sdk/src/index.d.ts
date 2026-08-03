@@ -1,6 +1,17 @@
 /**
  * @boomin/sdk — hand-written type surface (no codegen).
  * Object shapes follow DISTRIBUTION_CORE (frozen 2026-08-01).
+ *
+ * CASING: the SDK is camelCase in BOTH directions. Params are written in
+ * camelCase (snake_case is still accepted, but never both spellings of the same
+ * field — that throws ConflictingParametersError), and every response is
+ * camelCased on the way back: `event.valueMinor`, `page.hasMore`,
+ * `enrollment.approvalStatus`. The REST wire stays snake_case; translating is
+ * the SDK's job. The one exception, in both directions, is customer-owned
+ * free-form payloads — `metadata`, `properties`, `spec`, `permissions`,
+ * `rights`, `compensationDefaults`, `desiredState`, `observedState`,
+ * `externalIds`, `stats` — whose keys round-trip byte-identical.
+ * See `OPAQUE_FIELDS` and `REQUEST_FIELD_MAP` in src/casing.js.
  */
 
 import type { BoominErrorCode } from "./errors.js";
@@ -19,6 +30,16 @@ export interface BoominOptions {
   maxRetries?: number;
   /** Per-request timeout in milliseconds. Default 30000. */
   timeout?: number;
+  /**
+   * Return the wire's raw snake_case objects instead of camelCasing them.
+   * Default false. Client-level on purpose — the return shape is a property of
+   * the client, and a per-call flag would make the signatures below lie at half
+   * the call sites. Reach for it when proxying or logging responses verbatim.
+   *
+   * NOTE: with this on, every response type below reads in its snake_case wire
+   * spelling instead (`has_more`, `value_minor`, `approval_status`).
+   */
+  rawResponses?: boolean;
   /** fetch implementation override (testing / exotic runtimes). */
   fetch?: typeof fetch;
 }
@@ -41,7 +62,8 @@ export interface RequestOptions {
 export interface List<T> {
   object: "list";
   data: T[];
-  has_more: boolean;
+  /** Wire field `has_more` — the SDK camelCases every response key. */
+  hasMore: boolean;
 }
 
 /**
@@ -65,9 +87,14 @@ export interface PaginationParams {
  *
  * Note the v1 API REJECTS body fields it does not recognize (400
  * `invalid_request`, naming the field and the field you probably meant), so an
- * extra key is a runtime error, not a silent no-op. Params are written in
- * camelCase or snake_case; the SDK converts the top level of every body and
- * query string to the snake_case wire form.
+ * extra key is a runtime error, not a silent no-op.
+ *
+ * Params are written in camelCase or snake_case. The SDK converts every body
+ * and query string to the snake_case wire form, recursing into the nested
+ * structures the API owns (declared in `REQUEST_FIELD_MAP`, src/casing.js) and
+ * never into the ones you own. Supplying BOTH spellings of one field
+ * (`{ enabledEvents, enabled_events }`) throws `ConflictingParametersError`
+ * before the request is issued.
  */
 type Params<Known = object> = Known & { [key: string]: unknown };
 
@@ -210,8 +237,8 @@ export type BoominEventType =
 interface BaseObject {
   id: string;
   livemode?: boolean;
-  created_at?: string;
-  updated_at?: string;
+  createdAt?: string;
+  updatedAt?: string;
   [key: string]: unknown;
 }
 
@@ -230,11 +257,11 @@ export interface ProgramRequirement extends BaseObject {
   /** `prog_…` reference (the wire field is `program`, not `program_id`). */
   program?: string;
   scope?: RequirementScope;
-  scope_id?: string;
-  metric_key?: string;
+  scopeId?: string;
+  metricKey?: string;
   operator?: "gte" | "lte" | "eq" | "neq" | "exists";
   threshold?: number | null;
-  window_days?: number | null;
+  windowDays?: number | null;
   source?: string;
   weight?: number;
   required?: boolean;
@@ -255,11 +282,11 @@ export interface ProgramTier extends BaseObject {
 /** `null` until the program's connect surface has been minted. */
 export interface ProgramConnectConfig {
   object?: "program.connect_config";
-  public_key?: string;
-  allowed_origins?: string[];
-  allowed_redirect_origins?: string[];
-  required_channels?: string[];
-  default_approval_status?: "pending" | "approved";
+  publicKey?: string;
+  allowedOrigins?: string[];
+  allowedRedirectOrigins?: string[];
+  requiredChannels?: string[];
+  defaultApprovalStatus?: "pending" | "approved";
   metadata?: Metadata;
   [key: string]: unknown;
 }
@@ -268,7 +295,7 @@ export interface ProgramHandoffConfig {
   issuer?: string;
   audience?: string;
   /** Returned only when just created or explicitly supplied. */
-  signing_secret?: string;
+  signingSecret?: string;
   [key: string]: unknown;
 }
 
@@ -285,12 +312,13 @@ export interface Partnership extends BaseObject {
   /** `ptnr_…` id, or an inlined `{id, name, email}` on list/retrieve. */
   partner?: string | { id: string; name: string | null; email: string | null };
   status: PartnershipStatus;
+  /** Customer-extensible terms — keys inside are NEVER rewritten. */
   rights?: Record<string, unknown> | null;
   permissions?: Record<string, unknown> | null;
-  compensation_defaults?: Record<string, unknown> | null;
+  compensationDefaults?: Record<string, unknown> | null;
   source?: string | null;
-  started_at?: string | null;
-  ended_at?: string | null;
+  startedAt?: string | null;
+  endedAt?: string | null;
 }
 
 export interface Enrollment extends BaseObject {
@@ -300,16 +328,16 @@ export interface Enrollment extends BaseObject {
   partnership: string;
   partner?: string;
   /** The brand's decision — never touched by pause/resume/archive. */
-  approval_status: EnrollmentApprovalStatus;
+  approvalStatus: EnrollmentApprovalStatus;
   /** Participation lifecycle — never touched by approve/reject. */
   status: EnrollmentStatus;
-  billing_status?: EnrollmentBillingStatus;
-  qualification_status?: string | null;
-  referral_code?: string | null;
+  billingStatus?: EnrollmentBillingStatus;
+  qualificationStatus?: string | null;
+  referralCode?: string | null;
   metadata?: Metadata;
-  joined_at?: string | null;
-  approved_at?: string | null;
-  rejected_at?: string | null;
+  joinedAt?: string | null;
+  approvedAt?: string | null;
+  rejectedAt?: string | null;
 }
 
 /** Live budget echo — `total` is minor units; `consumed`/`released` come off
@@ -328,21 +356,23 @@ export interface Distribution extends BaseObject {
   description?: string | null;
   objective: DistributionObjective;
   status: DistributionStatus;
-  /** Deployment plan slots, enrollment policy, destination URL, asset refs. */
+  /** Deployment plan slots, enrollment policy, destination URL, asset refs.
+   *  Customer-extensible: keys inside are NEVER rewritten, either direction. */
   spec?: Record<string, unknown>;
-  plan_hash?: string | null;
+  planHash?: string | null;
   /** Associated `prog_…` ids (plural from the first release). */
   programs?: string[];
   budget?: DistributionBudget;
   /** Present on retrieve/list: `{ total, live }` rollup. */
   deployments?: { total: number; live: number };
+  /** Metric-keyed rollup — keys are metric keys, never rewritten. */
   stats?: Record<string, unknown>;
   error?: Record<string, unknown> | null;
-  launched_at?: string | null;
-  paused_at?: string | null;
-  completed_at?: string | null;
-  canceled_at?: string | null;
-  failed_at?: string | null;
+  launchedAt?: string | null;
+  pausedAt?: string | null;
+  completedAt?: string | null;
+  canceledAt?: string | null;
+  failedAt?: string | null;
 }
 
 /** The verdict `distributions.validate` returns alongside the distribution. */
@@ -374,7 +404,7 @@ export interface Deployment extends BaseObject {
   format?: string;
   adapter?: string;
   /** Stable slot key, UNIQUE per distribution (e.g. `enroll_123:instagram:reel:primary`). */
-  deployment_key?: string;
+  deploymentKey?: string;
   /** `pship_…` / `enr_…` / `conn_…` references — flat, not `*_id` fields. */
   partnership?: string | null;
   enrollment?: string | null;
@@ -382,24 +412,25 @@ export interface Deployment extends BaseObject {
   /** Desired lifecycle state (what the platform is driving toward). */
   status: DeploymentDesiredStatus;
   /** Provider-observed state (never written by intent). */
-  observed_status?: DeploymentObservedStatus;
-  desired_state?: Record<string, unknown>;
-  observed_state?: Record<string, unknown>;
-  external_ids?: Record<string, unknown>;
-  budget_allocation_minor?: number | null;
+  observedStatus?: DeploymentObservedStatus;
+  /** Adapter-owned blobs — keys inside are NEVER rewritten, either direction. */
+  desiredState?: Record<string, unknown>;
+  observedState?: Record<string, unknown>;
+  externalIds?: Record<string, unknown>;
+  budgetAllocationMinor?: number | null;
 }
 
 export interface Connection extends BaseObject {
   object?: "connection";
   kind: ConnectionKind;
   provider: string;
-  provider_account_id?: string | null;
+  providerAccountId?: string | null;
   /** Owner is a partner XOR a brand — one discriminated field, not two ids. */
   owner?: { type: "partner" | "brand"; id: string };
   status?: string;
   scopes?: string[] | null;
-  connected_at?: string | null;
-  disconnected_at?: string | null;
+  connectedAt?: string | null;
+  disconnectedAt?: string | null;
 }
 
 export interface PerformanceEvent extends BaseObject {
@@ -409,12 +440,13 @@ export interface PerformanceEvent extends BaseObject {
   distribution: string;
   type?: string;
   source?: string;
-  /** Minor units (cents), not `value`. */
-  value_minor?: number | null;
+  /** Minor units (cents), not `value`. Wire field `value_minor`. */
+  valueMinor?: number | null;
   currency?: string | null;
   quantity?: number | null;
-  occurred_at?: string;
-  received_at?: string;
+  occurredAt?: string;
+  receivedAt?: string;
+  /** Your own event vocabulary — keys round-trip byte-identical. */
   properties?: Record<string, unknown>;
   /** True when this event replayed an existing idempotency/external id. */
   duplicate?: boolean;
@@ -428,7 +460,13 @@ export interface PerformanceEvent extends BaseObject {
 }
 
 export interface PerformanceSummary {
-  object?: "performance_summary";
+  object?: "performance.summary";
+  filters?: { distribution: string | null; deployment: string | null };
+  events?: number;
+  /** Minor units (cents) across every counted event. Wire field `value_minor`. */
+  valueMinor?: number;
+  /** Wire field `by_type` — an array, not a map. */
+  byType?: Array<{ type: string; events: number; valueMinor: number; quantity: number }>;
   [key: string]: unknown;
 }
 
@@ -441,7 +479,7 @@ export interface BoominEvent {
   seq?: number;
   data: { object: Record<string, unknown>; [key: string]: unknown };
   livemode?: boolean;
-  created_at?: string;
+  createdAt?: string;
   [key: string]: unknown;
 }
 
@@ -460,21 +498,21 @@ export interface Operation extends BaseObject {
   status: OperationStatus;
   /** Why a `waiting` operation is parked — the whole diagnosis when a launch
    *  appears to hang (`funding_required` is the common one). */
-  waiting_reason?: OperationWaitingReason | null;
+  waitingReason?: OperationWaitingReason | null;
   attempts?: number;
-  max_attempts?: number;
-  target_operation_id?: string | null;
+  maxAttempts?: number;
+  targetOperationId?: string | null;
   error?: OperationError | null;
   progress?: Record<string, unknown> | null;
   result?: Record<string, unknown> | null;
-  completed_at?: string | null;
+  completedAt?: string | null;
 }
 
 export interface WebhookEndpoint extends BaseObject {
   object?: "webhook_endpoint";
   url: string;
-  /** Subscribed event types (public vocabulary). */
-  enabled_events?: BoominEventType[];
+  /** Subscribed event types (public vocabulary). Wire field `enabled_events`. */
+  enabledEvents?: BoominEventType[];
   status?: string;
   /** Signing secret — returned on create only. */
   secret?: string;
@@ -485,36 +523,36 @@ export interface Payout extends BaseObject {
   object?: "payout";
   status?: "pending" | "awaiting_account" | "processing" | "paid" | "failed" | (string & {});
   /** Cents — the wire field is `amount_cents`. */
-  amount_cents?: number;
+  amountCents?: number;
   currency?: string;
-  period_start?: string;
-  period_end?: string;
-  source_kind?: "rule" | "collaborator";
-  rule_id?: string | null;
+  periodStart?: string;
+  periodEnd?: string;
+  sourceKind?: "rule" | "collaborator";
+  ruleId?: string | null;
   recipient?: { kind: "user" | "partner"; id: string | null; name: string | null; email: string | null };
-  basis_kind?: string | null;
-  basis_cents?: number | null;
-  basis_metric_key?: string | null;
-  basis_metric_value?: number | null;
-  rate_bps?: number | null;
+  basisKind?: string | null;
+  basisCents?: number | null;
+  basisMetricKey?: string | null;
+  basisMetricValue?: number | null;
+  rateBps?: number | null;
 }
 
 export interface PayoutBatch extends BaseObject {
   object?: "payout_batch";
   rail?: string;
   status?: string;
-  item_count?: number;
+  itemCount?: number;
   /** Cents — the wire field is `total_amount_cents`. */
-  total_amount_cents?: number;
+  totalAmountCents?: number;
   currency?: string;
-  period_start?: string | null;
-  period_end?: string | null;
-  export_file_key?: string | null;
-  export_format?: string | null;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  exportFileKey?: string | null;
+  exportFormat?: string | null;
   /** Present on `exportCsv`; may be null when presigning is unavailable — a
    *  null here means the file was NOT delivered, even though the call is 201. */
-  download_url?: string | null;
-  exported_at?: string | null;
+  downloadUrl?: string | null;
+  exportedAt?: string | null;
   error?: Record<string, unknown> | null;
 }
 
@@ -625,7 +663,7 @@ export interface EnrollmentsClient {
     >,
     options?: RequestOptions,
   ): ListPromise<Enrollment>;
-  /** approve/reject touch approval_status only. */
+  /** approve/reject touch `approvalStatus` only. */
   approve(id: string, params?: Params, options?: RequestOptions): Promise<Enrollment>;
   reject(id: string, params?: Params, options?: RequestOptions): Promise<Enrollment>;
   /** pause/resume touch status only; links keep resolving while paused. */
@@ -634,7 +672,8 @@ export interface EnrollmentsClient {
 }
 
 export interface DistributionSubjectParam {
-  /** `kind` and `id` — NOT `subject_kind`/`subject_id`. */
+  /** `kind` and `id` — NOT `subject_kind`/`subject_id`. API-owned and declared
+   *  in REQUEST_FIELD_MAP, so camelCase inside an element converts too. */
   kind: SubjectKind;
   id: string;
   role?: string;
@@ -648,8 +687,8 @@ export interface DistributionCreateParams {
   /** Program associations (`prog_…`) — plural from the first release. */
   programs?: string[];
   subjects?: DistributionSubjectParam[];
-  /** `total` is minor units; `total_minor`/`totalMinor` are accepted aliases.
-   *  Nested keys are sent verbatim (the SDK converts the top level only). */
+  /** `total` is minor units; `totalMinor` is an accepted alias. API-owned and
+   *  DECLARED in REQUEST_FIELD_MAP, so its keys convert like any other. */
   budget?: { mode: BudgetMode; asset?: BudgetAsset | null; total?: number | null; totalMinor?: number | null };
   /** Free-form plan payload — stored verbatim, never key-rewritten. */
   spec?: Record<string, unknown>;
@@ -760,7 +799,7 @@ export interface OperationsClient {
    * Poll until the operation is terminal (succeeded|partial|failed|canceled)
    * and return it — does NOT throw on failed operations. Throws
    * `operation_wait_timeout` when the wait budget elapses (the message carries
-   * `waiting_reason` when the operation is parked).
+   * `waitingReason` when the operation is parked).
    *
    * Accepts the id STRING that `launch` returns or the operation object that
    * `pause`/`resume`/`cancel` return.
@@ -873,6 +912,7 @@ export {
   OperationConflictError,
   BandLimitReachedError,
   FundingRequiredError,
+  ConflictingParametersError,
   WebhookSignatureVerificationError,
   type BoominErrorCode,
 } from "./errors.js";

@@ -11,8 +11,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { Boomin, InvalidRequestError, BoominError } from "../src/index.js";
-import { snakeCaseBody, toSnakeKey, buildQueryString } from "../src/core.js";
+import { Boomin, InvalidRequestError, BoominError, ConflictingParametersError } from "../src/index.js";
+import { snakeCaseBody, toSnakeKey, buildQueryString, REQUEST_FIELD_MAP } from "../src/core.js";
 import { createClient, lastCall } from "./helpers.js";
 
 // ── The conversion rule itself ────────────────────────────────────────────────
@@ -29,24 +29,113 @@ test("toSnakeKey converts camelCase identifiers and leaves everything else alone
   assert.equal(toSnakeKey("a.b"), "a.b");
 });
 
-test("snakeCaseBody converts the TOP LEVEL only — nested payloads are verbatim", () => {
-  const spec = { enrollmentPolicy: "all_approved", nested: { deepKey: 1 } };
+test("snakeCaseBody with no declared shape converts the top level and nothing else", () => {
   const out = snakeCaseBody({
     referralCode: "abc",
-    spec,
     metadata: { customerId: "cus_1" },
-    subjects: [{ subjectKind: "event", id: "x" }],
+    anythingNested: { deepKey: 1 },
   });
-  assert.deepEqual(Object.keys(out).sort(), ["metadata", "referral_code", "spec", "subjects"]);
-  // Caller-defined payloads keep every key exactly as written.
-  assert.deepEqual(out.spec, { enrollmentPolicy: "all_approved", nested: { deepKey: 1 } });
+  assert.deepEqual(Object.keys(out).sort(), ["anything_nested", "metadata", "referral_code"]);
+  // An undeclared nested value is opaque by default — the SAFE default.
+  assert.deepEqual(out.anything_nested, { deepKey: 1 });
   assert.deepEqual(out.metadata, { customerId: "cus_1" });
-  assert.deepEqual(out.subjects, [{ subjectKind: "event", id: "x" }]);
 });
 
-test("snakeCaseBody never clobbers an explicitly written snake_case key", () => {
-  const out = snakeCaseBody({ enabled_events: ["a"], enabledEvents: ["b"] });
-  assert.deepEqual(out, { enabled_events: ["a"] });
+test("a camelCase key and its snake_case twin THROW instead of one silently winning", () => {
+  assert.throws(
+    () => snakeCaseBody({ enabled_events: ["a"], enabledEvents: ["b"] }),
+    (err) => {
+      assert.ok(err instanceof ConflictingParametersError);
+      // Still catchable as the 400-family error it is.
+      assert.ok(err instanceof InvalidRequestError);
+      assert.equal(err.code, "conflicting_parameters");
+      assert.equal(err.param, "enabledEvents");
+      assert.equal(err.conflictsWith, "enabled_events");
+      assert.equal(err.status, null, "nothing was ever sent");
+      assert.match(err.message, /refer to the same API field/);
+      return true;
+    },
+  );
+});
+
+test("explicit snake_case wins when it is the SOLE spelling supplied", () => {
+  assert.deepEqual(snakeCaseBody({ enabled_events: ["a"] }), { enabled_events: ["a"] });
+  assert.deepEqual(snakeCaseBody({ enabledEvents: ["a"] }), { enabled_events: ["a"] });
+});
+
+test("a collision inside a DECLARED nested structure throws, named at its real path", () => {
+  assert.throws(
+    () => snakeCaseBody(
+      { name: "x", budget: { mode: "funded", total_minor: 1, totalMinor: 2 } },
+      "distributions.create",
+    ),
+    (err) => {
+      assert.equal(err.param, "budget.totalMinor");
+      assert.equal(err.conflictsWith, "budget.total_minor");
+      return true;
+    },
+  );
+});
+
+test("a collision inside an OPAQUE payload is not a collision — those keys are yours", () => {
+  const properties = { orderId: "1001", order_id: "shadow" };
+  const out = snakeCaseBody({ deployment: "dep_1", properties }, "performance.events.create");
+  assert.deepEqual(out.properties, { orderId: "1001", order_id: "shadow" });
+});
+
+test("a query-param collision throws too", () => {
+  assert.throws(
+    () => buildQueryString({ startingAfter: "a", starting_after: "b" }),
+    ConflictingParametersError,
+  );
+});
+
+// ── The field map is the contract ─────────────────────────────────────────────
+
+test("the declared field map converts subjects[] elements and the budget object", () => {
+  const out = snakeCaseBody(
+    {
+      name: "Launch",
+      subjects: [{ subjectKind: "event", id: "u1", role: "primary" }, { kind: "offer", id: "u2" }],
+      budget: { mode: "funded", totalMinor: 10000 },
+    },
+    "distributions.create",
+  );
+  assert.deepEqual(out.subjects, [
+    { subject_kind: "event", id: "u1", role: "primary" },
+    { kind: "offer", id: "u2" },
+  ]);
+  assert.deepEqual(out.budget, { mode: "funded", total_minor: 10000 });
+});
+
+test("declared conversion never reaches into spec/metadata/properties", () => {
+  const spec = { enrollmentPolicy: "all_approved", nested: { deepKey: 1 } };
+  const out = snakeCaseBody({ name: "Launch", spec }, "distributions.create");
+  assert.deepEqual(out.spec, { enrollmentPolicy: "all_approved", nested: { deepKey: 1 } });
+
+  const perms = { canPost: true, nested: { alsoCamel: 1 } };
+  const permsOut = snakeCaseBody(
+    { permissions: perms, rights: { someRight: 1 }, compensationDefaults: { rateBps: 500 } },
+    "partnerships.updatePermissions",
+  );
+  assert.deepEqual(permsOut.permissions, perms);
+  assert.deepEqual(permsOut.rights, { someRight: 1 });
+  // The FIELD name is API-owned and converts; its CONTENTS do not.
+  assert.deepEqual(permsOut.compensation_defaults, { rateBps: 500 });
+
+  const meta = { customerTier: "gold" };
+  assert.deepEqual(snakeCaseBody({ name: "P", metadata: meta }, "programs.create").metadata, meta);
+});
+
+test("every field-map entry names a real SDK request shape", () => {
+  // Guard against a typo'd key quietly disabling nested conversion forever.
+  const boomin = new Boomin("sk_test_x", { fetch: async () => new Response("{}") });
+  for (const shape of Object.keys(REQUEST_FIELD_MAP)) {
+    const path = shape.split(".");
+    const method = path.pop();
+    const owner = path.reduce((node, segment) => node?.[segment], boomin);
+    assert.equal(typeof owner?.[method], "function", `${shape} is not a method on the client`);
+  }
 });
 
 test("snakeCaseBody passes non-plain-object bodies through untouched", () => {
@@ -110,14 +199,28 @@ test("performance ingest converts the field names but not `properties`", async (
   });
 });
 
-test("a nested budget object is sent exactly as written", async () => {
+test("the nested budget object converts on the wire (it is a DECLARED API structure)", async () => {
   const { boomin, calls } = createClient([{ status: 201, body: { id: "dist_1" } }]);
   await boomin.distributions.create({
     name: "Launch",
     objective: "acquisition",
     budget: { mode: "funded", asset: "credit", totalMinor: 10000 },
+    subjects: [{ kind: "event", id: "1a2b", role: "primary" }],
   });
-  assert.deepEqual(lastCall(calls).body.budget, { mode: "funded", asset: "credit", totalMinor: 10000 });
+  assert.deepEqual(lastCall(calls).body.budget, { mode: "funded", asset: "credit", total_minor: 10000 });
+  assert.deepEqual(lastCall(calls).body.subjects, [{ kind: "event", id: "1a2b", role: "primary" }]);
+});
+
+test("distributions.create sends spec verbatim while converting around it", async () => {
+  const { boomin, calls } = createClient([{ status: 201, body: { id: "dist_1" } }]);
+  await boomin.distributions.create({
+    name: "Launch",
+    idempotencyKey: "seed-key-1234",
+    spec: { enrollmentPolicy: "all_approved", destinationUrl: "https://x.com" },
+  });
+  const body = lastCall(calls).body;
+  assert.equal(body.idempotency_key, "seed-key-1234");
+  assert.deepEqual(body.spec, { enrollmentPolicy: "all_approved", destinationUrl: "https://x.com" });
 });
 
 // ── webhook_endpoints envelope ────────────────────────────────────────────────
@@ -167,7 +270,7 @@ test("operations.wait rejects a missing/undefined ref instead of polling /operat
   assert.equal(calls.length, 0);
 });
 
-test("a wait timeout reports waiting_reason — the whole diagnosis when a launch parks", async () => {
+test("a wait timeout reports waitingReason — the whole diagnosis when a launch parks", async () => {
   const { boomin } = createClient([
     { status: 200, body: { id: "op_1", status: "waiting", waiting_reason: "funding_required" } },
   ]);
