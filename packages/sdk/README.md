@@ -193,10 +193,97 @@ All errors extend `BoominError` (`code`, `status`, `requestId`). Subclasses:
 `OperationConflictError`, `BandLimitReachedError`, `FundingRequiredError`,
 `ConflictingParametersError`, and `WebhookSignatureVerificationError`.
 
+Payout configuration adds five, for the conditions a script actually branches
+on: `PayoutRulesRequiredError` (nothing configured — *not* nothing owed),
+`PayoutRailRequiredError` (no active rail; nothing is auto-provisioned),
+`PayoutRailAlreadyExistsError` (create is not upsert — call `update`),
+`ImmutableParameterError` (rule economics are frozen; `param` names the
+concept), `PayoutBatchEmptyError` and `PayoutBatchStateError` (the batch's
+status forbids this transition — read it and look at `status`). Everything else
+in the payout registry — `payout_rule_not_found`, `payout_rail_not_found`,
+`payout_export_format_invalid`, `payout_export_unconfigured` — arrives on its
+status-derived class and is matched by `code`.
+
 `ConflictingParametersError` is the one raised **client-side, before anything is
 sent** — `status` is `null`, `param` names the camelCase spelling and
 `conflictsWith` its snake_case twin. It extends `InvalidRequestError`, so an
 existing 400-family catch keeps working.
+
+### Payouts
+
+Money-out is one primitive with three parts, and the client nests exactly like
+the REST tree: `payouts.rules` (how a partner **earns**), `payouts.rails` (how
+money physically **leaves**), `payouts.batches` (one frozen disbursement run).
+There is no root `payoutRules` / `payoutRails` client.
+
+```js
+// 1. A rail — how money leaves. Create is CREATE, not upsert: a second create
+//    for a configured rail throws PayoutRailAlreadyExistsError rather than
+//    silently rewriting where your money lands.
+const rail = await boomin.payouts.rails.create({
+  rail: "csv_batch",
+  isDefault: true,
+  config: {
+    format: "paypal_payouts_csv", // required on csv_batch — PayPal's and Wise's
+                                  // column sets differ, so there is no default
+    walletFunded: false,
+    columns: [                    // YOUR data — see below
+      { key: "email",  header: "Email Address" },
+      { key: "amount", header: "Amount" },
+    ],
+  },
+});
+
+// 2. A rule — how a partner earns. Money is *Minor, never cents.
+const rule = await boomin.payouts.rules.create({
+  name: "Registration CPA",
+  type: "cpa",                                       // revenue_split | cpa | threshold_bonus
+  scope: { type: "program", program: "prog_123" },   // discriminated, never applies_to/scope_id
+  metricKey: "event_registration",
+  perUnitMinor: 500,                                 // ← wire field per_unit_minor
+});
+
+// 3. Run the period, then export.
+const run = await boomin.payouts.run({ periodStart: "2026-08-01", periodEnd: "2026-09-01" });
+run.outcome;        // "payouts_created" | "no_eligible_activity"  ← branch on THIS
+run.payoutsCreated; // …not on a count
+run.summary.totalAmountMinor;
+
+const accepted = await boomin.payouts.exportCsv({ periodStart: "2026-08-01" });
+await boomin.operations.wait(accepted.operation);
+const batch = await boomin.payouts.batches.retrieve(accepted.batch);
+batch.downloadUrl;  // presigned, RE-MINTED on every read
+
+// 4. Tell Boomin what the provider actually did.
+await boomin.payouts.batches.confirm(batch.id, {
+  externalBatchRef: "PAYPAL-2026-08",  // same ref replays one operation — a retry
+  results: [{ item: "pbi_1", status: "paid" }],  // after a timeout can't pay twice
+});
+```
+
+**`config.columns` is your data, and it round-trips byte-identical.** The SDK
+converts camelCase to the snake_case wire everywhere else, but every key,
+header string and array position inside `columns` is sent and returned exactly
+as you wrote it. That is not politeness: those headers are the file your bank
+ingests, and a "helpfully" re-cased header is a different file. `config.format`
+and `config.walletFunded` are the API's own fields and convert normally.
+
+Three shapes worth knowing before you script against them:
+
+- **`run` distinguishes "misconfigured" from "nothing owed".** A brand with no
+  active rule and no active content split throws `PayoutRulesRequiredError`
+  (409). A brand that is configured but had no qualifying activity **succeeds**
+  with `outcome: "no_eligible_activity"`. Treating those alike pays nobody and
+  reports success.
+- **`exportCsv` and `batches.export` are 202s** resolving
+  `{ batch, status, operation }` as id **strings**. No `downloadUrl` — it lives
+  on `batches.retrieve()`, re-minted per read instead of expiring in a body.
+- **A rule's economics are immutable.** `rules.update` takes `name` and
+  `status` only; anything else throws `ImmutableParameterError` naming the
+  frozen concept. To change money: create a replacement rule, activate it, then
+  `rules.archive(old)`. Archive is the only removal verb — a hard delete would
+  cascade the ledger rows the rule produced, erasing the record of money that
+  was actually paid.
 
 ### Webhooks
 
@@ -255,7 +342,7 @@ event type. Then `.list()`, `.retrieve()`, `.update()`, `.rotateSecret()`, `.del
 | `events` | `list({ type?, startingAfter? })` (operational feed OUT) |
 | `operations` | `retrieve` `list` `wait(operationOrId, { timeout })` |
 | `webhooks` | `endpoints.create/retrieve/update/list/del` + static `Boomin.webhooks.constructEvent` |
-| `payouts` | `list` `run` `exportCsv` `connectStatus` + `batches.list/retrieve` |
+| `payouts` | `list` `run` `exportCsv` `connectStatus` + nested `rules.create/retrieve/list/update/archive`, `rails.create/retrieve/list/update`, `batches.create/retrieve/list/export/confirm/cancel` |
 
 `resume` is the canonical verb on every surface — never `unpause`.
 
@@ -264,7 +351,13 @@ event type. Then `.list()`, `.retrieve()`, `.update()`, `.rotateSecret()`, `.del
 `src/casing.js` is the single boundary between camelCase and the snake_case
 wire. When the API grows a new **nested** request structure, declare it in
 `REQUEST_FIELD_MAP` there; when it grows a new customer-owned free-form blob,
-add it to `OPAQUE_FIELDS`. Nothing else in the package makes a casing decision.
+declare it in `RESPONSE_FIELD_MAP` (which computes `OPAQUE_FIELDS`). Nothing
+else in the package makes a casing decision.
+
+A field can be both, and `payout_rail.config` is the worked example: the object
+is API-owned (so `walletFunded` must convert) while `columns` inside it is the
+customer's (so it must not). Declaring only one half is a bug in either
+direction — one 400s a valid call, the other silently rewrites a bank file.
 
 ## License
 
