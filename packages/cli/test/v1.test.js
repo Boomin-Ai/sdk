@@ -80,9 +80,10 @@ test("distributionCreateParams prefers --budget JSON and requires --name", () =>
 test("enrollmentInviteParams requires program and a target identity", () => {
   assert.throws(() => enrollmentInviteParams(flags({})), /--program is required/);
   assert.throws(() => enrollmentInviteParams(flags({ program: "prog_x" })), /--email or --partner/);
+  // One vocabulary: the CLI hands the SDK camelCase and the SDK converts.
   assert.deepEqual(
     enrollmentInviteParams(flags({ program: "prog_x", email: "a@b.co", referralCode: "ada10" })),
-    { program: "prog_x", email: "a@b.co", referral_code: "ada10" },
+    { program: "prog_x", email: "a@b.co", referralCode: "ada10" },
   );
 });
 
@@ -256,12 +257,46 @@ test("events list forwards --type and prints seq-ordered rows", async () => {
   assert.match(log.text(), /42\s+evt_1\s+distribution\.live/);
 });
 
-test("--json prints raw API objects", async () => {
-  const body = { object: "list", data: [{ id: "dist_1", status: "draft" }], has_more: false };
+test("--json prints the SDK's camelCase objects, not the raw wire body", async () => {
+  // The wire stays snake_case; the SDK camelCases keys on the way back, so the
+  // CLI's machine-readable output speaks the same vocabulary as its flags.
+  const body = { object: "list", data: [{ id: "dist_1", status: "draft", plan_hash: "h" }], has_more: false };
   const fetchImpl = createMockFetch([{ status: 200, body }]);
   const log = createLogCapture();
   await run("distribution", "list", { json: true }, fetchImpl, log);
-  assert.deepEqual(JSON.parse(log.text()), body);
+  assert.deepEqual(JSON.parse(log.text()), {
+    object: "list",
+    data: [{ id: "dist_1", status: "draft", planHash: "h" }],
+    hasMore: false,
+  });
+});
+
+test("payout export writes the CSV from the camelCase downloadUrl", async () => {
+  const fetchImpl = createMockFetch([
+    { status: 201, body: { id: "pb_1", status: "exported", export_file_key: "k", download_url: null } },
+  ]);
+  const log = createLogCapture();
+  await run("payout", "export", { periodStart: "2026-08-01", periodEnd: "2026-09-01" }, fetchImpl, log);
+  // periodStart/periodEnd went out as the snake_case wire form.
+  assert.deepEqual(fetchImpl.calls[0].body, { period_start: "2026-08-01", period_end: "2026-09-01" });
+  assert.match(log.text(), /Export key: k/);
+});
+
+test("webhook create sends enabledEvents and renders the camelCase echo", async () => {
+  const fetchImpl = createMockFetch([
+    {
+      status: 201,
+      body: { webhook_endpoint: { id: "we_1", url: "https://x.com/wh", enabled_events: ["payout.settled"], secret: "whsec_1" } },
+    },
+  ]);
+  const log = createLogCapture();
+  await run("webhook", "create", { url: "https://x.com/wh", events: "payout.settled" }, fetchImpl, log);
+  assert.deepEqual(fetchImpl.calls[0].body, {
+    url: "https://x.com/wh",
+    enabled_events: ["payout.settled"],
+  });
+  assert.match(log.text(), /Events: payout\.settled/);
+  assert.match(log.text(), /whsec_1/);
 });
 
 test("missing_scope errors surface as ApiError with a suggested command", async () => {
