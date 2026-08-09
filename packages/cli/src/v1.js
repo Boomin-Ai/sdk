@@ -5,7 +5,7 @@
  * errors = {error:{code}}, list envelopes {object:'list',data,has_more} —
  * which the SDK hands back as {object,data,hasMore}).
  *
- * Groups: distribution, enrollment, partnership, connection, payout,
+ * Groups: program, distribution, enrollment, partnership, connection, payout,
  * webhook, events. Operation-returning commands (launch/pause/resume/cancel,
  * and 0.4.0's payout export/confirm) poll the operation to a terminal status by
  * default; --no-wait skips.
@@ -129,6 +129,38 @@ export function distributionCreateParams(flags) {
     subjects: parseJsonFlag(flags.subjects, "subjects"),
     budget,
   });
+}
+
+/**
+ * Flags → POST /programs payload, mirroring the API's programCreateSchema
+ * EXACTLY (name required; type/description/visibility/metadata optional).
+ * No invented flags: the schema is the contract.
+ */
+export function programCreateParams(flags) {
+  if (!flags.name) throw new Error("--name is required. Usage: npx @boomin/cli program create --name \"Creator program\"");
+  return removeEmpty({
+    name: String(flags.name),
+    type: flags.type ? String(flags.type) : undefined,
+    description: flags.description ? String(flags.description) : undefined,
+    visibility: flags.visibility ? String(flags.visibility) : undefined,
+    metadata: parseJsonFlag(flags.metadata, "metadata"),
+  });
+}
+
+/** Flags → POST /programs/{id} payload (programUpdateSchema: every field
+ * optional, but the API answers an empty patch with a 400 — say so first). */
+export function programUpdateParams(flags) {
+  const params = removeEmpty({
+    name: flags.name ? String(flags.name) : undefined,
+    description: flags.description ? String(flags.description) : undefined,
+    status: flags.status ? String(flags.status) : undefined,
+    visibility: flags.visibility ? String(flags.visibility) : undefined,
+    metadata: parseJsonFlag(flags.metadata, "metadata"),
+  });
+  if (!Object.keys(params).length) {
+    throw new Error("Pass at least one of --name, --description, --status, --visibility, --metadata. Usage: npx @boomin/cli program update <prog_id> --status paused");
+  }
+  return params;
 }
 
 export function enrollmentInviteParams(flags) {
@@ -293,6 +325,27 @@ export function distributionSummary(distribution) {
   ]);
 }
 
+export function programSummary(program) {
+  return formatObject(program, [
+    ["Program", (p) => p.id],
+    ["Name", (p) => p.name],
+    ["Type", (p) => p.type],
+    ["Status", (p) => p.status],
+    ["Visibility", (p) => p.visibility],
+    ["Description", (p) => p.description],
+    ["Metadata", (p) => (p.metadata && Object.keys(p.metadata).length ? JSON.stringify(p.metadata) : undefined)],
+    ["Created", (p) => p.createdAt],
+  ]);
+}
+
+const PROGRAM_COLUMNS = [
+  { header: "ID", value: (p) => p.id },
+  { header: "STATUS", value: (p) => p.status },
+  { header: "TYPE", value: (p) => p.type ?? "" },
+  { header: "VISIBILITY", value: (p) => p.visibility ?? "" },
+  { header: "NAME", value: (p) => p.name ?? "" },
+];
+
 const DISTRIBUTION_COLUMNS = [
   { header: "ID", value: (d) => d.id },
   { header: "STATUS", value: (d) => d.status },
@@ -408,6 +461,41 @@ function operationSummary(operation) {
 }
 
 // ── Command groups ────────────────────────────────────────────────────────────
+
+export async function programCommand(subcommand, flags, ctx) {
+  const { client, log } = ctx;
+  if (subcommand === "create") {
+    const program = await client.programs.create(programCreateParams(flags));
+    if (flags.json) return log(JSON.stringify(program, null, 2));
+    log(programSummary(program));
+    // The id is the very next thing the operator types — hand it to them
+    // inside the commands they will run, not buried in a summary line.
+    log(`\nNext: npx @boomin/cli enrollment invite --program ${program.id} --email partner@example.com`);
+    log(`  or: npx @boomin/cli distribution create --name "Launch" --programs ${program.id}`);
+    return;
+  }
+  if (subcommand === "list") {
+    // GET /programs takes pagination only (no status/type filters server-side).
+    const page = await client.programs.list(listParams(flags));
+    if (flags.json) return log(JSON.stringify(page, null, 2));
+    log(formatTable(page.data, PROGRAM_COLUMNS));
+    if (page.hasMore) log("(more — use --starting-after with the last id)");
+    return;
+  }
+  if (subcommand === "get") {
+    const id = requireId(flags, "npx @boomin/cli program get <prog_id>");
+    const program = await client.programs.retrieve(id);
+    if (flags.json) return log(JSON.stringify(program, null, 2));
+    return log(programSummary(program));
+  }
+  if (subcommand === "update") {
+    const id = requireId(flags, "npx @boomin/cli program update <prog_id> --status paused");
+    const program = await client.programs.update(id, programUpdateParams(flags));
+    if (flags.json) return log(JSON.stringify(program, null, 2));
+    return log(programSummary(program));
+  }
+  throw new Error(`Unknown program subcommand: ${subcommand}. Use create|list|get|update.`);
+}
 
 export async function distributionCommand(subcommand, flags, ctx) {
   const { client, log } = ctx;
@@ -1029,6 +1117,7 @@ export async function eventsCommand(subcommand, flags, ctx) {
 // ── Dispatch ──────────────────────────────────────────────────────────────────
 
 const GROUPS = {
+  program: programCommand,
   distribution: distributionCommand,
   enrollment: enrollmentCommand,
   partnership: partnershipCommand,

@@ -118,8 +118,8 @@ test("distributionSummary renders rollup + budget lines", () => {
 
 // ── Dispatch + wire behavior over a mocked transport ──────────────────────────
 
-test("isV1Group knows the seven groups", () => {
-  for (const group of ["distribution", "enrollment", "partnership", "connection", "payout", "webhook", "events"]) {
+test("isV1Group knows the eight groups", () => {
+  for (const group of ["program", "distribution", "enrollment", "partnership", "connection", "payout", "webhook", "events"]) {
     assert.ok(isV1Group(group), group);
   }
   assert.ok(!isV1Group("token"));
