@@ -570,8 +570,12 @@ export async function partnershipCommand(subcommand, flags, ctx) {
     return log(formatObject(partnership, [
       ["Partnership", (p) => p.id],
       ["Status", (p) => p.status],
-      ["Deployments paused", (p) => (p.deploymentsPaused ? p.deploymentsPaused.join(", ") || "(none)" : undefined)],
-      ["Deployments resumed", (p) => (p.deploymentsResumed ? p.deploymentsResumed.join(", ") || "(none)" : undefined)],
+      // A relationship pause moves this partner's own INSTRUMENTS, never the
+      // shared channels they sit on — so the verb reports link codes, plus the
+      // channels those links live on for context.
+      ["Links paused", (p) => (p.linksPaused ? p.linksPaused.join(", ") || "(none)" : undefined)],
+      ["Links resumed", (p) => (p.linksResumed ? p.linksResumed.join(", ") || "(none)" : undefined)],
+      ["Channels", (p) => (p.channels ? p.channels.join(", ") || "(none)" : undefined)],
       ["Ended", (p) => p.endedAt],
     ]));
   }

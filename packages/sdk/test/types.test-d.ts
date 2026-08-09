@@ -4,12 +4,14 @@
  */
 
 import Boomin, {
+  type Deployment,
   type Distribution,
   type DistributionLaunchResult,
   type Enrollment,
   type List,
   type Operation,
   type Partnership,
+  type PartnershipLifecycleResult,
   type BoominEvent,
   constructEvent,
 } from "../src/index.js";
@@ -45,8 +47,28 @@ async function exercise(): Promise<void> {
 
   const enrollment: Enrollment = await boomin.enrollments.create({ program: "prog_1", email: "a@b.c" });
   const _approval: "pending" | "approved" | "rejected" = enrollment.approvalStatus;
-  const partnership: Partnership = await boomin.partnerships.resume("ptn_1");
+  // pause/resume resolve the partnership PLUS what the verb actually touched:
+  // this partner's link codes and the channels those links live on — never
+  // deployment counts, which is an action a relationship verb must not take.
+  const partnership: PartnershipLifecycleResult = await boomin.partnerships.resume("ptn_1");
   const _pstatus: "pending" | "active" | "paused" | "ended" = partnership.status;
+  const _stillAPartnership: Partnership = partnership;
+  const _linksResumed: string[] | undefined = partnership.linksResumed;
+  const _channels: string[] | undefined = (await boomin.partnerships.pause("ptn_1")).channels;
+  void [_stillAPartnership, _linksResumed, _channels];
+
+  // A deployment is a CHANNEL: it names its PROGRAM, and is filtered by one.
+  const deployment: Deployment = await boomin.deployments.retrieve("dep_1");
+  const _mode: "owned" | "partner_program" | "paid" = deployment.mode;
+  const _program: string | null | undefined = deployment.program;
+  const _channelPage: List<Deployment> = await boomin.deployments.list({
+    distribution: "dist_1",
+    program: "prog_1",
+    mode: "partner_program",
+    status: "active",
+    limit: 5,
+  });
+  void [_mode, _program, _channelPage];
 
   // pagination: page envelope + async iteration
   const page: List<Enrollment> = await boomin.enrollments.list({ program: "prog_1", limit: 10 });
@@ -58,7 +80,17 @@ async function exercise(): Promise<void> {
   // nested clients
   await boomin.programs.requirements.create("prog_1", { scope: "program_entry", metricKey: "referral_count" });
   await boomin.programs.connectConfig.update("prog_1", { allowedOrigins: ["https://example.com"] });
-  await boomin.performance.events.create({ deployment: "dep_1", type: "sale", valueMinor: 100, externalEventId: "order_1" });
+  // `enrollment` is how a direct create says WHICH PARTNER earned it — the
+  // channel no longer carries that answer.
+  const measured = await boomin.performance.events.create({
+    deployment: "dep_1",
+    enrollment: "enr_1",
+    type: "sale",
+    valueMinor: 100,
+    externalEventId: "order_1",
+  });
+  const _earnedBy: string | null | undefined = measured.enrollment;
+  void _earnedBy;
   const endpoint = await boomin.webhooks.endpoints.create({ url: "https://x.com/wh", enabledEvents: ["payout.settled"] });
   const _secret: string | undefined = endpoint.secret;
   const _events: string[] | undefined = endpoint.enabledEvents;

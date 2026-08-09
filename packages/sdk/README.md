@@ -2,8 +2,9 @@
 
 The Boomin platform SDK — programmable distribution infrastructure. A
 **Distribution** is a coordinated business objective (Boomin's PaymentIntent)
-that fans out into concrete **Deployments** executed by partners, owned
-channels, and paid media.
+that fans out into concrete **Deployments** — one per execution channel: a
+partner program (whose enrolled partners each carry their own link on it), an
+owned channel, or paid media.
 
 Built on `fetch` + WebCrypto only: works on Node >= 18, Cloudflare Workers,
 Bun, Deno, browsers, and edge runtimes. Zero dependencies, zero Node builtins.
