@@ -232,6 +232,9 @@ function parseArgs(argv) {
       "currency",
       "externalBatchRef",
       "results",
+      // Program group (CLI 0.5.x). name/type/description/status/metadata are
+      // already listed above; visibility is the only new value-taking flag.
+      "visibility",
     ].includes(key);
     const value = rawValue ?? (takesValue ? argv[++index] : true);
     if (key === "origin") out.origins.push(String(value));
@@ -628,6 +631,33 @@ Signed handoff lets your logged-in app user click one button while your server s
 `);
     return;
   }
+  if (first === "program") {
+    console.log(`Boomin CLI - partner programs (Platform v1)
+
+Usage:
+  npx @boomin/cli program create --name "Creator program" [--type performance|upfront] [--visibility private|listed] [--description "..."] [--metadata '{"k":"v"}']
+  npx @boomin/cli program list [--limit 20] [--starting-after prog_...]
+  npx @boomin/cli program get <prog_id>
+  npx @boomin/cli program update <prog_id> [--name "..."] [--status active|paused|archived] [--visibility private|listed] [--description "..."] [--metadata '{"k":"v"}']
+
+Create flags:
+  --name <text>            Program name (required, max 200 chars).
+  --type <type>            performance|upfront.
+  --description <text>     Optional description (max 2000 chars).
+  --visibility <vis>       private|listed. Defaults to private.
+  --metadata <json>        Arbitrary key/value JSON, stored as-is.
+
+The program is the container everything else scopes to: enrollments invite
+INTO a program, distributions draw eligible enrollments FROM programs, and
+payout rules scope BY program. Create one first, then:
+  npx @boomin/cli enrollment invite --program prog_... --email partner@example.com
+  npx @boomin/cli distribution create --name "Launch" --programs prog_...
+
+Auth: --token sk_boomin_live_... or BOOMIN_PLATFORM_TOKEN
+(programs:read for list/get, programs:create for create, programs:update for update).
+`);
+    return;
+  }
   if (first === "distribution") {
     console.log(`Boomin CLI - distributions (Platform v1)
 
@@ -797,6 +827,7 @@ Usage:
   npx @boomin/cli skill install
 
 Platform v1 (distribution infrastructure — see \`help <group>\`):
+  npx @boomin/cli program create|list|get|update
   npx @boomin/cli distribution create|list|get|validate|launch|pause|resume|cancel
   npx @boomin/cli enrollment invite|approve|reject|list|get
   npx @boomin/cli partnership list|get|pause|resume|end
