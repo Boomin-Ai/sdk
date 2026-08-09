@@ -686,8 +686,9 @@ Usage:
   npx @boomin/cli partnership resume <pship_id>
   npx @boomin/cli partnership end <pship_id>
 
-Pause blocks new partner deployments and pauses existing ones; enrollments and
-links are preserved (attribution continues). End is the explicit terminal verb.
+Pause stops this partner's own links on the channels they run on — it never
+pauses a shared channel. Enrollments and links are preserved (attribution
+continues). End is the explicit terminal verb.
 `);
     return;
   }

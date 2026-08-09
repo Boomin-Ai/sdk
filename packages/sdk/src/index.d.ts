@@ -150,7 +150,10 @@ export type BudgetMode = "none" | "metered" | "funded";
 export type BudgetAsset = "usd" | "credit";
 export type SubjectKind = "event" | "offer" | "resource" | (string & {});
 
-export type DeploymentMode = "owned" | "partner" | "paid";
+/** `partner_program` is one CHANNEL per (distribution × program × slot) — the
+ *  partners it reaches are the promo links beneath it, not the channel itself.
+ *  `owned` / `paid` are the first-party and ad-account channels. */
+export type DeploymentMode = "owned" | "partner_program" | "paid";
 export type DeploymentMedium =
   | "social"
   | "email"
@@ -327,6 +330,22 @@ export interface Partnership extends BaseObject {
   endedAt?: string | null;
 }
 
+/**
+ * What `partnerships.pause` / `partnerships.resume` resolve to: the partnership
+ * itself plus what the verb actually touched. Under program-grain deployments a
+ * relationship pause can only move THIS partner's instruments, so the counts are
+ * LINK codes — `deploymentsPaused` / `deploymentsResumed` / `deploymentsSkipped`
+ * are gone, because they named an action these verbs must not take.
+ */
+export interface PartnershipLifecycleResult extends Partnership {
+  /** Promo-link codes flipped active → paused (pause only). */
+  linksPaused?: string[];
+  /** Promo-link codes flipped paused → active (resume only). */
+  linksResumed?: string[];
+  /** `dep_…` ids of the channels those links live on. */
+  channels?: string[];
+}
+
 export interface Enrollment extends BaseObject {
   object?: "enrollment";
   /** `prog_…` / `pship_…` / `ptnr_…` references — flat, not `*_id` fields. */
@@ -409,11 +428,17 @@ export interface Deployment extends BaseObject {
   channel?: string;
   format?: string;
   adapter?: string;
-  /** Stable slot key, UNIQUE per distribution (e.g. `enroll_123:instagram:reel:primary`). */
+  /** Stable slot key, UNIQUE per distribution (e.g. `program_<id>:boomin:referral_link:primary`). */
   deploymentKey?: string;
-  /** `pship_…` / `enr_…` / `conn_…` references — flat, not `*_id` fields. */
-  partnership?: string | null;
-  enrollment?: string | null;
+  /**
+   * `prog_…` / `conn_…` references — flat, not `*_id` fields.
+   *
+   * A deployment is a CHANNEL OF EXECUTION, so it names the PROGRAM it runs
+   * for and never a person: `partnership` and `enrollment` are gone from this
+   * object because the answer is now "all of them, via the links". Per-partner
+   * attribution reads off `PerformanceEvent.enrollment`.
+   */
+  program?: string | null;
   connection?: string | null;
   /** Desired lifecycle state (what the platform is driving toward). */
   status: DeploymentDesiredStatus;
@@ -444,6 +469,12 @@ export interface PerformanceEvent extends BaseObject {
   /** `dep_…` / `dist_…` references — flat, not `*_id` fields. */
   deployment: string;
   distribution: string;
+  /**
+   * `enr_…` — WHICH PARTNER earned it. The event carries its own attribution
+   * because the channel no longer does; `null` for genuinely unattributed
+   * first-party measurement (owned/paid).
+   */
+  enrollment?: string | null;
   type?: string;
   source?: string;
   /** Minor units (cents), not `value`. Wire field `value_minor`. */
@@ -808,9 +839,14 @@ export interface PartnershipsClient {
     params?: Params<PaginationParams & { status?: PartnershipStatus }>,
     options?: RequestOptions,
   ): ListPromise<Partnership>;
-  pause(id: string, params?: Params, options?: RequestOptions): Promise<Partnership>;
+  /**
+   * Pausing a RELATIONSHIP acts on this partner's own INSTRUMENTS, never on
+   * the shared channels they sit on — so the verb reports the link codes it
+   * paused plus the channels those links live on, for context.
+   */
+  pause(id: string, params?: Params, options?: RequestOptions): Promise<PartnershipLifecycleResult>;
   /** `resume` is the canonical verb on every surface — never `unpause`. */
-  resume(id: string, params?: Params, options?: RequestOptions): Promise<Partnership>;
+  resume(id: string, params?: Params, options?: RequestOptions): Promise<PartnershipLifecycleResult>;
   /** The explicit terminal command for the durable relationship. */
   end(id: string, params?: Params, options?: RequestOptions): Promise<Partnership>;
   updatePermissions(
@@ -899,8 +935,21 @@ export interface DistributionsClient {
 
 export interface DeploymentsClient {
   retrieve(id: string, options?: RequestOptions): Promise<Deployment>;
+  /**
+   * `status` is the DESIRED status (the field you control), never the observed
+   * one. `partnership` is GONE as a filter — a channel names no partner, so it
+   * would have answered every query with an empty page; "this partner's
+   * channels" is `program` plus the partner's own enrollment.
+   */
   list(
-    params?: Params<PaginationParams & { distribution?: string }>,
+    params?: Params<
+      PaginationParams & {
+        distribution?: string;
+        program?: string;
+        mode?: DeploymentMode;
+        status?: DeploymentDesiredStatus;
+      }
+    >,
     options?: RequestOptions,
   ): ListPromise<Deployment>;
   pause(id: string, params?: Params, options?: RequestOptions): Promise<Deployment & { operation: string }>;
@@ -922,6 +971,13 @@ export interface ConnectionsClient {
 export interface PerformanceEventCreateParams {
   /** `dep_…` id. Required. */
   deployment: string;
+  /**
+   * `enr_…` — WHICH PARTNER earned it. Optional, and the only way a direct
+   * create can attribute: the `?ref=` link paths stamp this themselves, but a
+   * first-party integration measuring its own conversions has no other channel
+   * to say who earned one. Omit it for unattributed measurement.
+   */
+  enrollment?: string;
   /**
    * Required. Only `click` | `sale` | `purchase` | `install` | `referral`
    * (plus the raw metric keys) reach the metric tables payouts read; anything
