@@ -27,6 +27,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import Boomin, { BoominError } from "@boomin/sdk";
 import { ApiError } from "./errors.js";
+import { CLI_CLIENT_HEADER } from "./version.js";
 
 const TERMINAL_OPERATION_STATUSES = new Set(["succeeded", "partial", "failed", "canceled"]);
 
@@ -42,6 +43,7 @@ export function sdkBaseUrl(platformApiBaseValue) {
 export function createV1Client({ token, platformApiBase, brand, fetch: fetchImpl }) {
   return new Boomin(token, {
     baseUrl: sdkBaseUrl(platformApiBase),
+    clientHeader: CLI_CLIENT_HEADER,
     ...(brand ? { brand } : {}),
     ...(fetchImpl ? { fetch: fetchImpl } : {}),
   });

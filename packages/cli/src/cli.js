@@ -7,6 +7,7 @@ import path from "node:path";
 import os from "node:os";
 import { ApiError } from "./errors.js";
 import { isV1Group, runV1Command } from "./v1.js";
+import { CLI_CLIENT_HEADER } from "./version.js";
 
 const DEFAULT_APP_API_BASE = "https://api.boomin.ai/v1/app";
 const DEFAULT_PLATFORM_API_BASE = "https://api.boomin.ai/v1/platform";
@@ -329,6 +330,7 @@ async function request(apiBase, route, options = {}) {
 
   const headers = {
     "Content-Type": "application/json",
+    "X-Boomin-Client": CLI_CLIENT_HEADER,
     ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
     ...(options.platformToken ? { Authorization: `Bearer ${options.platformToken}` } : {}),
     ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
