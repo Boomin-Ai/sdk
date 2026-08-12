@@ -75,6 +75,12 @@ export class HttpClient {
     // TypeScript signature in index.d.ts a lie at half the call sites. Use it
     // when you are proxying/logging Boomin responses verbatim.
     this.rawResponses = options.rawResponses === true;
+    // Client marker sent as X-Boomin-Client on every request. Defaults to this
+    // SDK's own identity; wrappers that drive the SDK (e.g. @boomin/cli) pass
+    // their own so server-side adoption metrics attribute the real surface.
+    this.clientHeader = typeof options.clientHeader === "string" && options.clientHeader.trim() !== ""
+      ? options.clientHeader.trim()
+      : `@boomin/sdk/${SDK_VERSION}`;
     this.fetch = options.fetch ?? globalThis.fetch;
     if (typeof this.fetch !== "function") {
       throw new APIError(
@@ -103,7 +109,7 @@ export class HttpClient {
     const headers = {
       Authorization: `Bearer ${this.secretKey}`,
       Accept: "application/json",
-      "X-Boomin-Client": `@boomin/sdk/${SDK_VERSION}`,
+      "X-Boomin-Client": this.clientHeader,
     };
     const brand = options.brand ?? this.brand;
     if (brand) headers["Boomin-Brand"] = brand;
