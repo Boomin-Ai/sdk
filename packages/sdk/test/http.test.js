@@ -17,7 +17,8 @@ test("requests carry bearer auth, accept, and client headers", async () => {
   const call = lastCall(calls);
   assert.equal(call.headers.Authorization, "Bearer sk_test_abc123");
   assert.equal(call.headers.Accept, "application/json");
-  assert.match(call.headers["X-Boomin-Client"], /^@boomin\/sdk\/1\.0\.0-beta\.1$/);
+  // Pin the shape, not the release — the version half is SDK_VERSION and bumps every publish.
+  assert.match(call.headers["X-Boomin-Client"], /^@boomin\/sdk\/\d+\.\d+\.\d+(-[\w.]+)?$/);
   assert.equal(call.url, "https://api.boomin.ai/v1/platform/programs/prog_1");
 });
 
