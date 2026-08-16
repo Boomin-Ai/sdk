@@ -22,8 +22,11 @@ import { HttpClient, SDK_VERSION } from "./core.js";
 import { constructEvent } from "./webhooks.js";
 import {
   ProgramsClient,
-  PartnersClient,
-  PartnershipsClient,
+  EntitiesClient,
+  RelationshipsClient,
+  AssertionsClient,
+  OperatingTypesClient,
+  MetricKeysClient,
   EnrollmentsClient,
   DistributionsClient,
   DeploymentsClient,
@@ -50,8 +53,11 @@ export class Boomin {
     this._http = new HttpClient(secretKey, options);
 
     this.programs = new ProgramsClient(this._http);
-    this.partners = new PartnersClient(this._http);
-    this.partnerships = new PartnershipsClient(this._http);
+    this.entities = new EntitiesClient(this._http);
+    this.relationships = new RelationshipsClient(this._http);
+    this.assertions = new AssertionsClient(this._http);
+    this.operatingTypes = new OperatingTypesClient(this._http);
+    this.metricKeys = new MetricKeysClient(this._http);
     this.enrollments = new EnrollmentsClient(this._http);
     this.distributions = new DistributionsClient(this._http);
     this.deployments = new DeploymentsClient(this._http);
@@ -61,6 +67,24 @@ export class Boomin {
     this.operations = new OperationsClient(this._http);
     this.webhooks = new WebhooksClient(this._http);
     this.payouts = new PayoutsClient(this._http);
+  }
+
+  /**
+   * @deprecated RELATIONSHIP_CORE naming: use `boomin.entities`. Delegates to
+   * the canonical client (requests go to `/entities`; old `ptnr_` ids decode
+   * forever). Never removed.
+   */
+  get partners() {
+    return this.entities;
+  }
+
+  /**
+   * @deprecated RELATIONSHIP_CORE naming: use `boomin.relationships`.
+   * Delegates to the canonical client (requests go to `/relationships`; old
+   * `pship_` ids decode forever). Never removed.
+   */
+  get partnerships() {
+    return this.relationships;
   }
 }
 

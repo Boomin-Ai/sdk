@@ -1,5 +1,6 @@
 /**
- * The 12 resource clients of @boomin/sdk (spec: DISTRIBUTION_CORE §4).
+ * The 15 resource clients of @boomin/sdk (DISTRIBUTION_CORE §4 +
+ * RELATIONSHIP_CORE §2/§4/§5).
  *
  * Conventions:
  * - every method's trailing argument is per-call RequestOptions
@@ -137,50 +138,193 @@ export class ProgramsClient extends ResourceClient {
   list(params, options) {
     return this._list("/programs", params, options);
   }
-}
 
-export class PartnersClient extends ResourceClient {
-  retrieve(id, options) {
-    return this._http.get(`/partners/${pathParam(id, "id")}`, undefined, options);
-  }
-
-  list(params, options) {
-    return this._list("/partners", params, options);
-  }
-}
-
-export class PartnershipsClient extends ResourceClient {
-  retrieve(id, options) {
-    return this._http.get(`/partnerships/${pathParam(id, "id")}`, undefined, options);
-  }
-
-  list(params, options) {
-    return this._list("/partnerships", params, options);
-  }
-
-  pause(id, params, options) {
-    return this._http.post(`/partnerships/${pathParam(id, "id")}/pause`, params ?? {}, options);
-  }
-
-  resume(id, params, options) {
-    return this._http.post(`/partnerships/${pathParam(id, "id")}/resume`, params ?? {}, options);
-  }
-
-  end(id, params, options) {
-    return this._http.post(`/partnerships/${pathParam(id, "id")}/end`, params ?? {}, options);
-  }
-
-  updatePermissions(id, params, options) {
+  /**
+   * Read-only standing preview (`programs:read`). No params = the
+   * whole-program reporting shape. `{ enrollment }` targets one member
+   * through the evaluator's exact read half; `{ enrollment, simulate }`
+   * overlays what-ifs — `simulate.assertions` claims (null = simulate
+   * absence) and/or `simulate.operatingType` (null = simulate untyped) —
+   * persisting NOTHING. The contract behind `boomin standing test`.
+   */
+  standingPreview(id, params, options) {
     return this._http.post(
-      `/partnerships/${pathParam(id, "id")}/permissions`,
-      params,
+      `/programs/${pathParam(id, "id")}/standing_preview`,
+      params ?? {},
       options,
-      "partnerships.updatePermissions",
+      "programs.standingPreview",
     );
   }
 }
 
+/** Canonical since RELATIONSHIP_CORE: an ENTITY is who you have relationships
+ *  with. `boomin.partners` delegates here (old `ptnr_` ids decode forever). */
+export class EntitiesClient extends ResourceClient {
+  retrieve(id, options) {
+    return this._http.get(`/entities/${pathParam(id, "id")}`, undefined, options);
+  }
+
+  list(params, options) {
+    return this._list("/entities", params, options);
+  }
+}
+
+/** Canonical since RELATIONSHIP_CORE: the durable pair-level bond.
+ *  `boomin.partnerships` delegates here (old `pship_` ids decode forever). */
+export class RelationshipsClient extends ResourceClient {
+  retrieve(id, options) {
+    return this._http.get(`/relationships/${pathParam(id, "id")}`, undefined, options);
+  }
+
+  list(params, options) {
+    return this._list("/relationships", params, options);
+  }
+
+  pause(id, params, options) {
+    return this._http.post(`/relationships/${pathParam(id, "id")}/pause`, params ?? {}, options);
+  }
+
+  resume(id, params, options) {
+    return this._http.post(`/relationships/${pathParam(id, "id")}/resume`, params ?? {}, options);
+  }
+
+  end(id, params, options) {
+    return this._http.post(`/relationships/${pathParam(id, "id")}/end`, params ?? {}, options);
+  }
+
+  updatePermissions(id, params, options) {
+    return this._http.post(
+      `/relationships/${pathParam(id, "id")}/permissions`,
+      params,
+      options,
+      "relationships.updatePermissions",
+    );
+  }
+}
+
+/**
+ * Tenant truth (RELATIONSHIP_CORE §4). Assertions are CLAIM-addressed — you
+ * assert or revoke `(subject, key)`, never an `asrt_` event id (events are the
+ * immutable history; `retrieveEvent` reads one). The subject is `entity` OR
+ * `externalUserId`+`issuer` — the same pair a signed handoff binds.
+ */
+export class AssertionsClient extends ResourceClient {
+  /** Assert (create/refresh) a claim. Re-asserting the same value with a new
+   *  `expiresAt` extends it — a refreshed expiry is a new event. */
+  create(params, options) {
+    return this._http.post("/assertions", params, options, "assertions.create");
+  }
+
+  /** Revoke by claim address — `{entity | externalUserId+issuer, key}`. */
+  revoke(params, options) {
+    return this._http.post("/assertions/revoke", params, options, "assertions.revoke");
+  }
+
+  /** Current claims for one subject (`entity` or `externalUserId`+`issuer`). */
+  list(params, options) {
+    return this._list("/assertions", params, options);
+  }
+
+  /** One immutable assertion EVENT by `asrt_…` id. */
+  retrieveEvent(id, options) {
+    return this._http.get(`/assertions/${pathParam(id, "id")}`, undefined, options);
+  }
+}
+
+/** Contextual capacity vocabulary (§2): brand words like advisor / reseller.
+ *  Keys are non-recyclable — archive stops NEW assignment; reactivate via
+ *  `update(id, { status: "active" })`, never a second create. */
+export class OperatingTypesClient extends ResourceClient {
+  create(params, options) {
+    return this._http.post("/operating_types", params, options, "operatingTypes.create");
+  }
+
+  /** Accepts `otype_…` or the brand-scoped KEY (`"advisor"`). */
+  retrieve(id, options) {
+    return this._http.get(`/operating_types/${pathParam(id, "id")}`, undefined, options);
+  }
+
+  update(id, params, options) {
+    return this._http.post(`/operating_types/${pathParam(id, "id")}`, params, options, "operatingTypes.update");
+  }
+
+  list(params, options) {
+    return this._list("/operating_types", params, options);
+  }
+
+  /** Archive — the key survives forever; never recycled. */
+  archive(id, options) {
+    return this._http.delete(`/operating_types/${pathParam(id, "id")}`, options);
+  }
+}
+
+/** Tenant metric vocabulary (§4/§5, mig 0132): registered `x:` keys. The LIST
+ *  also carries the built-ins flagged `builtin: true`. Vocabulary ≠ capability:
+ *  standing/reward admit `x:`, payout stays built-ins-only in v1. */
+export class MetricKeysClient extends ResourceClient {
+  create(params, options) {
+    return this._http.post("/metric_keys", params, options, "metricKeys.create");
+  }
+
+  /** Accepts `mkey_…`, the `x:` key itself, or a built-in key (synthetic). */
+  retrieve(id, options) {
+    return this._http.get(`/metric_keys/${pathParam(id, "id")}`, undefined, options);
+  }
+
+  update(id, params, options) {
+    return this._http.post(`/metric_keys/${pathParam(id, "id")}`, params, options, "metricKeys.update");
+  }
+
+  list(params, options) {
+    return this._list("/metric_keys", params, options);
+  }
+
+  /** Archive — non-recyclable; reactivate the SAME row via update. */
+  archive(id, options) {
+    return this._http.delete(`/metric_keys/${pathParam(id, "id")}`, options);
+  }
+}
+
+/** Negotiated per-enrollment terms (§5) under /enrollments/:id/requirement_overrides. */
+class EnrollmentOverridesClient extends ResourceClient {
+  _base(enrollmentId) {
+    return `/enrollments/${pathParam(enrollmentId, "enrollmentId")}/requirement_overrides`;
+  }
+
+  create(enrollmentId, params, options) {
+    return this._http.post(this._base(enrollmentId), params, options, "enrollments.requirementOverrides.create");
+  }
+
+  retrieve(enrollmentId, id, options) {
+    return this._http.get(`${this._base(enrollmentId)}/${pathParam(id, "id")}`, undefined, options);
+  }
+
+  update(enrollmentId, id, params, options) {
+    return this._http.post(
+      `${this._base(enrollmentId)}/${pathParam(id, "id")}`,
+      params,
+      options,
+      "enrollments.requirementOverrides.update",
+    );
+  }
+
+  list(enrollmentId, params, options) {
+    return this._list(this._base(enrollmentId), params, options);
+  }
+
+  /** DELETE = archive (history stays readable; the merge stops applying it). */
+  del(enrollmentId, id, options) {
+    return this._http.delete(`${this._base(enrollmentId)}/${pathParam(id, "id")}`, options);
+  }
+}
+
 export class EnrollmentsClient extends ResourceClient {
+  constructor(http) {
+    super(http);
+    /** Negotiated per-enrollment terms (§5): patch / disable / add. */
+    this.requirementOverrides = new EnrollmentOverridesClient(http);
+  }
+
   /** Invite: creates the enrollment (payload carries `program`). */
   create(params, options) {
     return this._http.post("/enrollments", params, options, "enrollments.create");
@@ -188,6 +332,12 @@ export class EnrollmentsClient extends ResourceClient {
 
   retrieve(id, options) {
     return this._http.get(`/enrollments/${pathParam(id, "id")}`, undefined, options);
+  }
+
+  /** Update — notably `operatingType` (a key like `"advisor"`, or null to
+   *  clear the capacity). Archived types cannot be newly assigned. */
+  update(id, params, options) {
+    return this._http.post(`/enrollments/${pathParam(id, "id")}`, params, options, "enrollments.update");
   }
 
   list(params, options) {

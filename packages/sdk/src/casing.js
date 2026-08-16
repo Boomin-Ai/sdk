@@ -94,18 +94,38 @@ export const RESPONSE_FIELD_MAP = Object.freeze({
   // distributions.ts serializeOperation — `result` embeds a deployment's
   // external_ids, so the name is declared here too and caught at depth.
   operation: ["external_ids"],
-  // relationships.ts serializePartnership — customer-extensible terms
+  // relationships.ts serializePartnership — customer-extensible terms.
+  // `relationship` is the canonical discriminator (RELATIONSHIP_CORE naming);
+  // `partnership` is retained FOREVER for stored payloads written before the
+  // flip (webhook deliveries, exported events) — a stored object may alias,
+  // it may never stop deserializing.
+  relationship: ["permissions", "rights", "compensation_defaults"],
   partnership: ["permissions", "rights", "compensation_defaults"],
   // relationships.ts serializeEnrollment / serializeConnection
   // (connection.grants[].permissions is a per-grant permission map)
   enrollment: ["metadata"],
   connection: ["metadata", "permissions"],
-  // partners.ts / programs.ts
+  // entities.ts (canonical) / partners.ts (stored payloads) / programs.ts
+  entity: ["metadata"],
   partner: ["metadata"],
   program: ["metadata"],
   "program.requirement": ["metadata"],
   "program.tier": ["metadata"],
   "program.connect_config": ["metadata"],
+  // assertions.ts / operating-types.ts / metric-keys.ts /
+  // enrollment-overrides.ts (RELATIONSHIP_CORE §2/§4/§5). The standing_*
+  // shapes carry no customer blobs; `simulate.assertions` keys are the
+  // CALLER's claim vocabulary and echo back inside `simulated` untouched.
+  assertion: [],
+  operating_type: ["metadata"],
+  metric_key: ["metadata"],
+  requirement_override: ["metadata"],
+  "program.standing_preview": [],
+  // `simulated` echoes the caller's simulate block — its `assertions` record
+  // is keyed by the CALLER's claim vocabulary, frozen byte-for-byte.
+  "program.standing_result": ["simulated"],
+  "program.standing_run": [],
+  "program.standing": [],
   // telemetry.ts — the caller's own analytics vocabulary
   performance_event: ["properties"],
   // No customer-owned fields; listed so the map is a complete census of the
@@ -212,13 +232,42 @@ export const REQUEST_FIELD_MAP = Object.freeze({
 
   // api/src/routes/platform-v1/relationships.ts — permissionsSchema.
   // All three are z.record(z.string(), z.unknown()): customer-extensible terms.
+  // Canonical shape key first (RELATIONSHIP_CORE naming); the old spelling is
+  // retained forever for anything replaying a stored request shape.
+  "relationships.updatePermissions": {
+    permissions: OPAQUE,
+    rights: OPAQUE,
+    compensation_defaults: OPAQUE,
+  },
   "partnerships.updatePermissions": {
     permissions: OPAQUE,
     rights: OPAQUE,
     compensation_defaults: OPAQUE,
   },
-  // relationships.ts — inviteSchema
+  // relationships.ts — inviteSchema / enrollment update (operating_type is a
+  // flat key reference; nothing nested)
   "enrollments.create": { metadata: OPAQUE },
+  "enrollments.update": {},
+  // enrollment-overrides.ts — createSchema / updateSchema (flat + metadata)
+  "enrollments.requirementOverrides.create": { metadata: OPAQUE },
+  "enrollments.requirementOverrides.update": { metadata: OPAQUE },
+
+  // assertions.ts — assertSchema / revokeSchema: flat (entity /
+  // external_user_id / issuer / key / value / expires_at).
+  "assertions.create": {},
+  "assertions.revoke": {},
+
+  // operating-types.ts / metric-keys.ts — create/update: flat + metadata.
+  "operatingTypes.create": { metadata: OPAQUE },
+  "operatingTypes.update": { metadata: OPAQUE },
+  "metricKeys.create": { metadata: OPAQUE },
+  "metricKeys.update": { metadata: OPAQUE },
+
+  // programs.ts — standingPreviewSchema. `simulate` is API-owned (its
+  // `operating_type` converts) but `simulate.assertions` is keyed by the
+  // CALLER's claim vocabulary — a renamed claim key would simulate a
+  // DIFFERENT claim, so it goes out byte-for-byte.
+  "programs.standingPreview": { simulate: nested({ assertions: OPAQUE }) },
 
   // api/src/routes/platform-v1/distributions.ts — createSchema / updateSchema.
   // The only two API-OWNED nested structures in the whole v1 request surface:

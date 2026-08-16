@@ -108,8 +108,21 @@ const PLATFORM_V1_SCOPES = [
   { scope: "deployments:read", category: "platform_v1", description: "Read deployments and their observed state." },
   { scope: "enrollments:read", category: "platform_v1", description: "Read program enrollments." },
   { scope: "enrollments:write", category: "platform_v1", description: "Invite, approve, reject, pause, or resume enrollments." },
-  { scope: "partnerships:read", category: "platform_v1", description: "Read durable partnerships." },
-  { scope: "partnerships:write", category: "platform_v1", description: "Pause, resume, end, or update partnerships." },
+  // Canonical relationship-stack scopes (RELATIONSHIP_CORE). The legacy
+  // `partnerships:*` spellings stay mintable and honored forever via aliases.
+  { scope: "relationships:read", category: "platform_v1", description: "Read durable relationships (canonical; alias of partnerships:read)." },
+  { scope: "relationships:write", category: "platform_v1", description: "Pause, resume, end, or update relationships (canonical; alias of partnerships:write)." },
+  { scope: "entities:read", category: "platform_v1", description: "Read entities (canonical; alias of partners:read)." },
+  { scope: "assertions:read", category: "platform_v1", description: "Read tenant assertion claims and events." },
+  { scope: "assertions:write", category: "platform_v1", description: "Assert and revoke tenant truth (claim-addressed)." },
+  { scope: "operating_types:read", category: "platform_v1", description: "Read the brand's operating-capacity vocabulary." },
+  { scope: "operating_types:write", category: "platform_v1", description: "Create, update, archive, or reactivate operating types." },
+  { scope: "metric_keys:read", category: "platform_v1", description: "Read the metric vocabulary (built-ins + registered x: keys)." },
+  { scope: "metric_keys:write", category: "platform_v1", description: "Register, update, archive, or reactivate tenant x: metric keys." },
+  { scope: "requirement_overrides:read", category: "platform_v1", description: "Read per-enrollment requirement overrides." },
+  { scope: "requirement_overrides:write", category: "platform_v1", description: "Patch, add, disable, or clear per-enrollment requirement overrides." },
+  { scope: "partnerships:read", category: "platform_v1", description: "Read durable partnerships (legacy spelling of relationships:read)." },
+  { scope: "partnerships:write", category: "platform_v1", description: "Pause, resume, end, or update partnerships (legacy spelling of relationships:write)." },
   { scope: "connections:read", category: "platform_v1", description: "Read provider connections and grants." },
   { scope: "connections:write", category: "platform_v1", description: "Revoke provider connections." },
   { scope: "performance:read", category: "platform_v1", description: "Read performance summaries." },
@@ -141,7 +154,12 @@ function parseArgs(argv) {
       out._.push(arg);
       continue;
     }
-    const [rawKey, rawValue] = arg.slice(2).split("=");
+    // Split on the FIRST `=` only — a value may itself carry `=`
+    // (`--assert advisor_verified=true` in its `--assert=…` form).
+    const body = arg.slice(2);
+    const eqIndex = body.indexOf("=");
+    const rawKey = eqIndex === -1 ? body : body.slice(0, eqIndex);
+    const rawValue = eqIndex === -1 ? undefined : body.slice(eqIndex + 1);
     const key = rawKey.replace(/-([a-z])/g, (_, ch) => ch.toUpperCase());
     const takesValue = [
       "apiBase",
@@ -236,9 +254,31 @@ function parseArgs(argv) {
       // Program group (CLI 0.5.x). name/type/description/status/metadata are
       // already listed above; visibility is the only new value-taking flag.
       "visibility",
+      // Relationship stack (CLI 0.7.0): assertions, operating types, metric
+      // keys, standing test, overrides, network apply. `--assert` repeats and
+      // accumulates (like --origin); `--clear`/`--dry-run`/`--include-expired`
+      // and `--required` stay bare booleans (`--required=false` works — an `=`
+      // value is read before this list is consulted).
+      "entity",
+      "externalUserId",
+      "operator",
+      "value",
+      "expiresAt",
+      "key",
+      "displayName",
+      "operatingType",
+      "enrollment",
+      "requirement",
+      "override",
+      "failurePolicy",
+      "scopeId",
+      "weight",
+      "assert",
+      "file",
     ].includes(key);
     const value = rawValue ?? (takesValue ? argv[++index] : true);
     if (key === "origin") out.origins.push(String(value));
+    else if (key === "assert") (out.asserts ??= []).push(String(value));
     else out[key] = value;
   }
   return out;
@@ -831,8 +871,13 @@ Usage:
 Platform v1 (distribution infrastructure — see \`help <group>\`):
   npx @boomin/cli program create|list|get|update
   npx @boomin/cli distribution create|list|get|validate|launch|pause|resume|cancel
-  npx @boomin/cli enrollment invite|approve|reject|list|get
-  npx @boomin/cli partnership list|get|pause|resume|end
+  npx @boomin/cli enrollment invite|approve|reject|list|get|set-type|overrides
+  npx @boomin/cli relationship list|get|pause|resume|end   (alias: partnership)
+  npx @boomin/cli assertion assert|revoke|list
+  npx @boomin/cli operating-type create|list|get|update|archive
+  npx @boomin/cli metric register|list|get|update|archive
+  npx @boomin/cli standing test --program prog_… [--enrollment enr_…] [--assert key=value …] [--operating-type key]
+  npx @boomin/cli network apply <file.json> [--dry-run]
   npx @boomin/cli connection list|get|revoke
   npx @boomin/cli payout list|run|export|connect
   npx @boomin/cli payout rules list|create|show|update|archive

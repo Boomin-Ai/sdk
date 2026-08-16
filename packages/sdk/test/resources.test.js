@@ -35,16 +35,43 @@ const CASES = [
   { name: "programs.handoffConfig.update", invoke: (b) => b.programs.handoffConfig.update("prog_1", { issuer: "acme" }), method: "POST", path: "/programs/prog_1/handoff_config", body: { issuer: "acme" } },
 
   // partners
-  { name: "partners.retrieve", invoke: (b) => b.partners.retrieve("ptr_1"), method: "GET", path: "/partners/ptr_1" },
-  { name: "partners.list", invoke: (b) => b.partners.list(), method: "GET", path: "/partners" },
+  { name: "entities.retrieve", invoke: (b) => b.entities.retrieve("ent_1"), method: "GET", path: "/entities/ent_1" },
+  { name: "entities.list", invoke: (b) => b.entities.list(), method: "GET", path: "/entities" },
+  // Deprecated getters DELEGATE to the canonical clients: old code keeps
+  // working and speaks the canonical wire (old ids decode forever server-side).
+  { name: "partners.retrieve (deprecated → entities)", invoke: (b) => b.partners.retrieve("ptnr_1"), method: "GET", path: "/entities/ptnr_1" },
+  { name: "partners.list (deprecated → entities)", invoke: (b) => b.partners.list(), method: "GET", path: "/entities" },
 
   // partnerships
-  { name: "partnerships.list", invoke: (b) => b.partnerships.list({ status: "active" }), method: "GET", path: "/partnerships?status=active" },
-  { name: "partnerships.retrieve", invoke: (b) => b.partnerships.retrieve("ptn_1"), method: "GET", path: "/partnerships/ptn_1" },
-  { name: "partnerships.pause", invoke: (b) => b.partnerships.pause("ptn_1"), method: "POST", path: "/partnerships/ptn_1/pause", body: {} },
-  { name: "partnerships.resume", invoke: (b) => b.partnerships.resume("ptn_1"), method: "POST", path: "/partnerships/ptn_1/resume", body: {} },
-  { name: "partnerships.end", invoke: (b) => b.partnerships.end("ptn_1", { reason: "done" }), method: "POST", path: "/partnerships/ptn_1/end", body: { reason: "done" } },
-  { name: "partnerships.updatePermissions", invoke: (b) => b.partnerships.updatePermissions("ptn_1", { permissions: { publish: true } }), method: "POST", path: "/partnerships/ptn_1/permissions", body: { permissions: { publish: true } } },
+  { name: "relationships.list", invoke: (b) => b.relationships.list({ status: "active" }), method: "GET", path: "/relationships?status=active" },
+  { name: "relationships.retrieve", invoke: (b) => b.relationships.retrieve("rel_1"), method: "GET", path: "/relationships/rel_1" },
+  { name: "relationships.pause", invoke: (b) => b.relationships.pause("rel_1"), method: "POST", path: "/relationships/rel_1/pause", body: {} },
+  { name: "relationships.resume", invoke: (b) => b.relationships.resume("rel_1"), method: "POST", path: "/relationships/rel_1/resume", body: {} },
+  { name: "relationships.end", invoke: (b) => b.relationships.end("rel_1", { reason: "done" }), method: "POST", path: "/relationships/rel_1/end", body: { reason: "done" } },
+  { name: "relationships.updatePermissions", invoke: (b) => b.relationships.updatePermissions("rel_1", { permissions: { publish: true } }), method: "POST", path: "/relationships/rel_1/permissions", body: { permissions: { publish: true } } },
+  // Deprecated getter delegates — legacy pship_ ids ride the canonical route.
+  { name: "partnerships.retrieve (deprecated → relationships)", invoke: (b) => b.partnerships.retrieve("pship_1"), method: "GET", path: "/relationships/pship_1" },
+  { name: "partnerships.updatePermissions (deprecated → relationships)", invoke: (b) => b.partnerships.updatePermissions("pship_1", { permissions: { publish: true } }), method: "POST", path: "/relationships/pship_1/permissions", body: { permissions: { publish: true } } },
+  // Relationship stack (RELATIONSHIP_CORE §2/§4/§5).
+  { name: "assertions.create", invoke: (b) => b.assertions.create({ externalUserId: "u_1", issuer: "atlantium.ai", key: "advisor_verified", value: true, expiresAt: "2030-01-01T00:00:00Z" }), method: "POST", path: "/assertions", body: { external_user_id: "u_1", issuer: "atlantium.ai", key: "advisor_verified", value: true, expires_at: "2030-01-01T00:00:00Z" } },
+  { name: "assertions.revoke", invoke: (b) => b.assertions.revoke({ entity: "ent_1", key: "advisor_verified" }), method: "POST", path: "/assertions/revoke", body: { entity: "ent_1", key: "advisor_verified" } },
+  { name: "assertions.list", invoke: (b) => b.assertions.list({ entity: "ent_1", includeExpired: true }), method: "GET", path: "/assertions?entity=ent_1&include_expired=true" },
+  { name: "assertions.retrieveEvent", invoke: (b) => b.assertions.retrieveEvent("asrt_1"), method: "GET", path: "/assertions/asrt_1" },
+  { name: "operatingTypes.create", invoke: (b) => b.operatingTypes.create({ key: "advisor", name: "Advisor" }), method: "POST", path: "/operating_types", body: { key: "advisor", name: "Advisor" } },
+  { name: "operatingTypes.retrieve (by key)", invoke: (b) => b.operatingTypes.retrieve("advisor"), method: "GET", path: "/operating_types/advisor" },
+  { name: "operatingTypes.update (reactivate)", invoke: (b) => b.operatingTypes.update("otype_1", { status: "active" }), method: "POST", path: "/operating_types/otype_1", body: { status: "active" } },
+  { name: "operatingTypes.list", invoke: (b) => b.operatingTypes.list(), method: "GET", path: "/operating_types" },
+  { name: "operatingTypes.archive", invoke: (b) => b.operatingTypes.archive("otype_1"), method: "DELETE", path: "/operating_types/otype_1" },
+  { name: "metricKeys.create", invoke: (b) => b.metricKeys.create({ key: "x:demo_submitted", displayName: "Demos" }), method: "POST", path: "/metric_keys", body: { key: "x:demo_submitted", display_name: "Demos" } },
+  // `:` percent-encodes in the path segment; Hono decodes it server-side.
+  { name: "metricKeys.retrieve (by key)", invoke: (b) => b.metricKeys.retrieve("x:demo_submitted"), method: "GET", path: "/metric_keys/x%3Ademo_submitted" },
+  { name: "metricKeys.list", invoke: (b) => b.metricKeys.list(), method: "GET", path: "/metric_keys" },
+  { name: "metricKeys.archive", invoke: (b) => b.metricKeys.archive("mkey_1"), method: "DELETE", path: "/metric_keys/mkey_1" },
+  { name: "enrollments.update (set capacity)", invoke: (b) => b.enrollments.update("enr_1", { operatingType: "advisor" }), method: "POST", path: "/enrollments/enr_1", body: { operating_type: "advisor" } },
+  { name: "enrollments.requirementOverrides.create", invoke: (b) => b.enrollments.requirementOverrides.create("enr_1", { requirement: "11111111-1111-1111-1111-111111111111", disabled: true }), method: "POST", path: "/enrollments/enr_1/requirement_overrides", body: { requirement: "11111111-1111-1111-1111-111111111111", disabled: true } },
+  { name: "enrollments.requirementOverrides.list", invoke: (b) => b.enrollments.requirementOverrides.list("enr_1"), method: "GET", path: "/enrollments/enr_1/requirement_overrides" },
+  { name: "enrollments.requirementOverrides.del (archive)", invoke: (b) => b.enrollments.requirementOverrides.del("enr_1", "ovr_1"), method: "DELETE", path: "/enrollments/enr_1/requirement_overrides/ovr_1" },
+  { name: "programs.standingPreview (simulate — claim keys frozen)", invoke: (b) => b.programs.standingPreview("prog_1", { enrollment: "enr_1", simulate: { operatingType: "advisor", assertions: { advisor_verified: true } } }), method: "POST", path: "/programs/prog_1/standing_preview", body: { enrollment: "enr_1", simulate: { operating_type: "advisor", assertions: { advisor_verified: true } } } },
 
   // enrollments (flat; payload carries program)
   { name: "enrollments.create", invoke: (b) => b.enrollments.create({ program: "prog_1", email: "c@x.com" }), method: "POST", path: "/enrollments", body: { program: "prog_1", email: "c@x.com" } },
