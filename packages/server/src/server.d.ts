@@ -15,6 +15,9 @@ export interface BoominHandoffOptions extends BoominHandoffUser {
   nonce?: string;
   expiresInSeconds?: number;
   apiBase?: string;
+  /** Operating capacity KEY (e.g. `"advisor"`, 0130). Rides the signed
+   *  payload; Boomin skips unknown/archived keys — never fails a signup. */
+  operatingType?: string;
 }
 
 export interface BoominHandoffPayload {
@@ -29,6 +32,7 @@ export interface BoominHandoffPayload {
   externalUserId: string;
   email: string;
   name: string;
+  operatingType?: string;
   metadata: Record<string, unknown>;
 }
 
@@ -80,7 +84,46 @@ export interface BoominMetricEventHelperOptions {
   headers?: Record<string, string>;
 }
 
+/** Claim address: `externalUserId`+`issuer` (the pair signed handoffs bind)
+ *  OR an `ent_…` id. Platform-key surface (`sk_…`, scope assertions:write). */
+export interface BoominAssertionSubject {
+  entity?: string;
+  externalUserId?: string;
+  issuer?: string;
+}
+
+export interface BoominAssertionAuthOptions {
+  /** Platform secret key (`sk_…`) — NOT a Connect signing secret. */
+  secretKey: string;
+  /** Brand id/slug for org-wide keys (sent as Boomin-Brand). */
+  brand?: string;
+  platformApiBase?: string;
+  apiBase?: string;
+  idempotencyKey?: string;
+  headers?: Record<string, string>;
+}
+
+export interface BoominAssertOptions extends BoominAssertionAuthOptions, BoominAssertionSubject {
+  key: string;
+  value: number | boolean;
+  /** Re-asserting with a fresh expiry EXTENDS the claim. */
+  expiresAt?: string | number | Date;
+}
+
+export interface BoominConversionOptions extends Omit<BoominMetricEventHelperOptions, "partnerRef" | "amount"> {
+  /** The referral code that attributes this conversion (or partnerRef). */
+  referralCode?: string;
+  partnerRef?: string;
+  /** Minor units. Idempotent per `eventId` — derive it from your billing record. */
+  amountCents: number;
+}
+
 export function stableJson(value: unknown): string;
+export function assert(options: BoominAssertOptions): Promise<Record<string, unknown>>;
+export function revokeAssertion(options: BoominAssertionAuthOptions & BoominAssertionSubject & { key: string }): Promise<Record<string, unknown>>;
+export function recordConversion(options: BoominConversionOptions): Promise<Record<string, unknown>>;
+/** Canonical name; `getPartnerStanding` stays honored forever. */
+export function getStanding(options: BoominStandingOptions): Promise<Record<string, unknown>>;
 export function createHandoffPayload(options: BoominHandoffOptions): BoominHandoffPayload;
 export function signHandoffPayload(payload: BoominHandoffPayload, signingSecret: string): Promise<string>;
 export function createSignedHandoff(options: BoominHandoffOptions): Promise<BoominSignedHandoff>;

@@ -1,6 +1,6 @@
 {
   "name": "@boomin/server",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Server helpers for Boomin signed handoff and event ingestion.",
   "type": "module",
   "repository": {
@@ -28,6 +28,7 @@
   ],
   "scripts": {
     "build": "node --check src/server.js && node --check src/server/next.js",
+    "test": "node --test 'test/*.test.js'",
     "pack:dry": "npm pack --dry-run"
   },
   "keywords": [

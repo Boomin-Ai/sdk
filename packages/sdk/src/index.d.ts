@@ -308,17 +308,24 @@ export interface ProgramHandoffConfig {
   [key: string]: unknown;
 }
 
-export interface Partner extends BaseObject {
-  object?: "partner";
+/** Canonical since RELATIONSHIP_CORE: WHO you have relationships with. */
+export interface Entity extends BaseObject {
+  /** `entity` canonically; `partner` on payloads stored before the flip. */
+  object?: "entity" | "partner";
   kind?: string;
   name?: string | null;
   email?: string | null;
   metadata?: Metadata;
 }
 
-export interface Partnership extends BaseObject {
-  object?: "partnership";
-  /** `ptnr_…` id, or an inlined `{id, name, email}` on list/retrieve. */
+/** @deprecated RELATIONSHIP_CORE naming: use {@link Entity}. Alias forever. */
+export type Partner = Entity;
+
+/** Canonical since RELATIONSHIP_CORE: the durable pair-level bond. */
+export interface Relationship extends BaseObject {
+  /** `relationship` canonically; `partnership` on stored payloads. */
+  object?: "relationship" | "partnership";
+  /** `ent_…` id, or an inlined `{id, name, email}` on list/retrieve. */
   partner?: string | { id: string; name: string | null; email: string | null };
   status: PartnershipStatus;
   /** Customer-extensible terms — keys inside are NEVER rewritten. */
@@ -330,20 +337,99 @@ export interface Partnership extends BaseObject {
   endedAt?: string | null;
 }
 
+/** @deprecated RELATIONSHIP_CORE naming: use {@link Relationship}. Alias forever. */
+export type Partnership = Relationship;
+
 /**
- * What `partnerships.pause` / `partnerships.resume` resolve to: the partnership
- * itself plus what the verb actually touched. Under program-grain deployments a
- * relationship pause can only move THIS partner's instruments, so the counts are
- * LINK codes — `deploymentsPaused` / `deploymentsResumed` / `deploymentsSkipped`
- * are gone, because they named an action these verbs must not take.
+ * What `relationships.pause` / `relationships.resume` resolve to: the
+ * relationship itself plus what the verb actually touched. Under program-grain
+ * deployments a relationship pause can only move THIS partner's instruments,
+ * so the counts are LINK codes — `deploymentsPaused` / `deploymentsResumed` /
+ * `deploymentsSkipped` are gone, because they named an action these verbs must
+ * not take.
  */
-export interface PartnershipLifecycleResult extends Partnership {
+export interface RelationshipLifecycleResult extends Relationship {
   /** Promo-link codes flipped active → paused (pause only). */
   linksPaused?: string[];
   /** Promo-link codes flipped paused → active (resume only). */
   linksResumed?: string[];
   /** `dep_…` ids of the channels those links live on. */
   channels?: string[];
+}
+
+/** @deprecated Use {@link RelationshipLifecycleResult}. Alias forever. */
+export type PartnershipLifecycleResult = RelationshipLifecycleResult;
+
+/** One immutable assertion EVENT (RELATIONSHIP_CORE §4) — tenant truth. */
+export interface Assertion extends BaseObject {
+  object?: "assertion";
+  /** `ent_…` reference. */
+  entity?: string | null;
+  key: string;
+  action?: "asserted" | "revoked";
+  value?: number | null;
+  expiresAt?: string | null;
+  effectiveAt?: string | null;
+}
+
+/** Contextual capacity vocabulary (§2) — brand words, non-recyclable keys. */
+export interface OperatingType extends BaseObject {
+  object?: "operating_type";
+  key: string;
+  name?: string;
+  status?: "active" | "archived";
+  metadata?: Metadata;
+}
+
+/** Tenant metric vocabulary (§4/§5, mig 0132). Built-ins appear in lists with
+ *  `builtin: true` and `id: null` — platform vocabulary, not rows. */
+export interface MetricKey extends BaseObject {
+  object?: "metric_key";
+  key: string;
+  displayName?: string;
+  description?: string | null;
+  status?: "active" | "archived";
+  builtin?: boolean;
+  metadata?: Metadata;
+}
+
+/** Negotiated per-enrollment terms (§5): PATCH (requirement set) or ADD mode. */
+export interface RequirementOverride extends BaseObject {
+  object?: "requirement_override";
+  /** Bare requirement uuid in PATCH mode; null in ADD mode. */
+  requirement?: string | null;
+  disabled?: boolean;
+  metricKey?: string | null;
+  status?: string;
+  metadata?: Metadata;
+}
+
+/** One member's would-be standing from `programs.standingPreview`. */
+export interface StandingResult {
+  object?: "program.standing_result";
+  enrollment: string;
+  partner?: string;
+  /** The WOULD-BE status under the (possibly simulated) context. */
+  status: string;
+  /** What the ledger currently says. */
+  storedStatus?: string;
+  score?: number;
+  met?: Array<{ requirement: string; metricKey: string | null; scope: string | null }>;
+  failed?: Array<{ requirement: string; metricKey: string | null; scope: string | null }>;
+  tier?: { id: string; name: string; rank: number } | null;
+  operatingType?: string | null;
+  assertions?: Array<{ key: string; value: number; expiresAt: string | null; simulated: boolean }>;
+  /** Echo of the simulate block — contents byte-for-byte as sent. */
+  simulated?: Record<string, unknown> | null;
+  [key: string]: unknown;
+}
+
+export interface StandingPreview {
+  object?: "program.standing_preview";
+  program: string;
+  /** Present on enrollment-targeted previews. */
+  enrollment?: StandingResult;
+  [key: string]: unknown;
 }
 
 export interface Enrollment extends BaseObject {
@@ -825,35 +911,117 @@ export interface ProgramsClient {
   tiers: ProgramSubcollection<ProgramTier>;
   connectConfig: ProgramConfigClient<ProgramConnectConfig>;
   handoffConfig: ProgramConfigClient<ProgramHandoffConfig>;
+  /**
+   * Read-only standing preview (`programs:read`) — no params for the
+   * whole-program shape; `{enrollment}` for one member's would-be standing;
+   * `{enrollment, simulate}` for what-ifs (assertion claims, capacity).
+   * Persists nothing. The contract behind `boomin standing test`.
+   */
+  standingPreview(
+    id: string,
+    params?: Params<{
+      enrollment?: string;
+      simulate?: { assertions?: Record<string, number | boolean | null>; operatingType?: string | null };
+    }>,
+    options?: RequestOptions,
+  ): Promise<StandingPreview>;
 }
 
-export interface PartnersClient {
-  retrieve(id: string, options?: RequestOptions): Promise<Partner>;
+export interface EntitiesClient {
+  retrieve(id: string, options?: RequestOptions): Promise<Entity>;
   /** `email` is an exact, case-insensitive match. */
-  list(params?: Params<PaginationParams & { email?: string }>, options?: RequestOptions): ListPromise<Partner>;
+  list(params?: Params<PaginationParams & { email?: string }>, options?: RequestOptions): ListPromise<Entity>;
 }
 
-export interface PartnershipsClient {
-  retrieve(id: string, options?: RequestOptions): Promise<Partnership>;
+/** @deprecated Use {@link EntitiesClient} (`boomin.entities`). Alias forever. */
+export type PartnersClient = EntitiesClient;
+
+export interface RelationshipsClient {
+  retrieve(id: string, options?: RequestOptions): Promise<Relationship>;
   list(
     params?: Params<PaginationParams & { status?: PartnershipStatus }>,
     options?: RequestOptions,
-  ): ListPromise<Partnership>;
+  ): ListPromise<Relationship>;
   /**
    * Pausing a RELATIONSHIP acts on this partner's own INSTRUMENTS, never on
    * the shared channels they sit on — so the verb reports the link codes it
    * paused plus the channels those links live on, for context.
    */
-  pause(id: string, params?: Params, options?: RequestOptions): Promise<PartnershipLifecycleResult>;
+  pause(id: string, params?: Params, options?: RequestOptions): Promise<RelationshipLifecycleResult>;
   /** `resume` is the canonical verb on every surface — never `unpause`. */
-  resume(id: string, params?: Params, options?: RequestOptions): Promise<PartnershipLifecycleResult>;
+  resume(id: string, params?: Params, options?: RequestOptions): Promise<RelationshipLifecycleResult>;
   /** The explicit terminal command for the durable relationship. */
-  end(id: string, params?: Params, options?: RequestOptions): Promise<Partnership>;
+  end(id: string, params?: Params, options?: RequestOptions): Promise<Relationship>;
   updatePermissions(
     id: string,
     params: Params<{ permissions?: Record<string, unknown> }>,
     options?: RequestOptions,
-  ): Promise<Partnership>;
+  ): Promise<Relationship>;
+}
+
+/** @deprecated Use {@link RelationshipsClient} (`boomin.relationships`). Alias forever. */
+export type PartnershipsClient = RelationshipsClient;
+
+/** The claim subject: `entity` OR `externalUserId`+`issuer` (the pair a
+ *  signed handoff binds). */
+export interface AssertionSubjectParams {
+  entity?: string;
+  externalUserId?: string;
+  issuer?: string;
+}
+
+export interface AssertionCreateParams extends AssertionSubjectParams {
+  key: string;
+  value: number | boolean;
+  /** RFC 3339. Re-asserting with a fresh expiry EXTENDS the claim. */
+  expiresAt?: string;
+}
+
+export interface AssertionsClient {
+  /** Assert (create/refresh) a claim — 201 on change, 200 unchanged. */
+  create(params: Params<AssertionCreateParams>, options?: RequestOptions): Promise<Assertion>;
+  /** Revoke by claim address — never by `asrt_` event id. */
+  revoke(params: Params<AssertionSubjectParams & { key: string }>, options?: RequestOptions): Promise<Assertion>;
+  /** Current claims for one subject. */
+  list(
+    params: Params<PaginationParams & AssertionSubjectParams & { key?: string; includeExpired?: boolean }>,
+    options?: RequestOptions,
+  ): ListPromise<Assertion>;
+  /** One immutable assertion EVENT by `asrt_…` id. */
+  retrieveEvent(id: string, options?: RequestOptions): Promise<Assertion>;
+}
+
+export interface OperatingTypesClient {
+  create(params: Params<{ key: string; name: string; metadata?: Metadata }>, options?: RequestOptions): Promise<OperatingType>;
+  /** Accepts `otype_…` or the brand-scoped KEY (`"advisor"`). */
+  retrieve(id: string, options?: RequestOptions): Promise<OperatingType>;
+  /** Reactivation lives here: `update(id, { status: "active" })`. */
+  update(id: string, params: Params<{ name?: string; status?: "active" | "archived"; metadata?: Metadata }>, options?: RequestOptions): Promise<OperatingType>;
+  list(params?: Params<PaginationParams & { status?: "active" | "archived" }>, options?: RequestOptions): ListPromise<OperatingType>;
+  /** Archive — keys are never recycled. */
+  archive(id: string, options?: RequestOptions): Promise<OperatingType & { deleted: boolean }>;
+}
+
+export interface MetricKeysClient {
+  /** `key` must be `x:`-namespaced (`x:demo_submitted`). */
+  create(params: Params<{ key: string; displayName?: string; description?: string; metadata?: Metadata }>, options?: RequestOptions): Promise<MetricKey>;
+  /** Accepts `mkey_…`, the `x:` key, or a built-in key (synthetic object). */
+  retrieve(id: string, options?: RequestOptions): Promise<MetricKey>;
+  update(id: string, params: Params<{ displayName?: string; description?: string | null; status?: "active" | "archived"; metadata?: Metadata }>, options?: RequestOptions): Promise<MetricKey>;
+  /** Carries the built-ins flagged `builtin: true` on the first page. */
+  list(params?: Params<PaginationParams & { status?: "active" | "archived" }>, options?: RequestOptions): ListPromise<MetricKey>;
+  /** Archive — non-recyclable; reactivate the SAME row via update. */
+  archive(id: string, options?: RequestOptions): Promise<MetricKey & { deleted: boolean }>;
+}
+
+/** Per-enrollment overrides (§5) — same shape family as ProgramSubcollection. */
+export interface EnrollmentOverridesClient {
+  create(enrollmentId: string, params: Params, options?: RequestOptions): Promise<RequirementOverride>;
+  retrieve(enrollmentId: string, id: string, options?: RequestOptions): Promise<RequirementOverride>;
+  update(enrollmentId: string, id: string, params: Params, options?: RequestOptions): Promise<RequirementOverride>;
+  list(enrollmentId: string, params?: Params<PaginationParams>, options?: RequestOptions): ListPromise<RequirementOverride>;
+  /** DELETE = archive. */
+  del(enrollmentId: string, id: string, options?: RequestOptions): Promise<RequirementOverride & { deleted: boolean }>;
 }
 
 export interface EnrollmentCreateParams {
@@ -888,6 +1056,10 @@ export interface EnrollmentsClient {
   /** pause/resume touch status only; links keep resolving while paused. */
   pause(id: string, params?: Params, options?: RequestOptions): Promise<Enrollment>;
   resume(id: string, params?: Params, options?: RequestOptions): Promise<Enrollment>;
+  /** Update — notably `operatingType` (a key, or null to clear capacity). */
+  update(id: string, params: Params<{ operatingType?: string | null; metadata?: Metadata }>, options?: RequestOptions): Promise<Enrollment>;
+  /** Negotiated per-enrollment terms (§5). */
+  requirementOverrides: EnrollmentOverridesClient;
 }
 
 export interface DistributionSubjectParam {
@@ -1251,8 +1423,15 @@ export declare class Boomin {
   };
 
   readonly programs: ProgramsClient;
-  readonly partners: PartnersClient;
-  readonly partnerships: PartnershipsClient;
+  readonly entities: EntitiesClient;
+  readonly relationships: RelationshipsClient;
+  readonly assertions: AssertionsClient;
+  readonly operatingTypes: OperatingTypesClient;
+  readonly metricKeys: MetricKeysClient;
+  /** @deprecated Use `boomin.entities` — delegates to the canonical client. */
+  readonly partners: EntitiesClient;
+  /** @deprecated Use `boomin.relationships` — delegates to the canonical client. */
+  readonly partnerships: RelationshipsClient;
   readonly enrollments: EnrollmentsClient;
   readonly distributions: DistributionsClient;
   readonly deployments: DeploymentsClient;

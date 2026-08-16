@@ -26,8 +26,8 @@ test("baseUrl override + trailing slash normalization", async () => {
   const { boomin, calls } = createClient([{ status: 200, body: {} }], {
     baseUrl: "http://localhost:8787/",
   });
-  await boomin.partners.list();
-  assert.equal(lastCall(calls).url, "http://localhost:8787/v1/platform/partners");
+  await boomin.entities.list();
+  assert.equal(lastCall(calls).url, "http://localhost:8787/v1/platform/entities");
 });
 
 test("Boomin-Brand threads from constructor and per-call override wins", async () => {

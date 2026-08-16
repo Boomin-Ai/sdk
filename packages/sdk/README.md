@@ -332,10 +332,13 @@ event type. Then `.list()`, `.retrieve()`, `.update()`, `.rotateSecret()`, `.del
 
 | Client | Methods |
 | --- | --- |
-| `programs` | `create` `retrieve` `update` `list` + nested `requirements` / `tiers` (CRUD) / `connectConfig` / `handoffConfig` (retrieve, update) |
-| `partners` | `retrieve` `list` |
-| `partnerships` | `list` `retrieve` `pause` `resume` `end` `updatePermissions` |
-| `enrollments` | `create` (invite) `approve` `reject` `pause` `resume` `list` `retrieve` |
+| `programs` | `create` `retrieve` `update` `list` `standingPreview` + nested `requirements` / `tiers` (CRUD) / `connectConfig` / `handoffConfig` (retrieve, update) |
+| `entities` | `retrieve` `list` (canonical; `partners` delegates here) |
+| `relationships` | `list` `retrieve` `pause` `resume` `end` `updatePermissions` (canonical; `partnerships` delegates here) |
+| `assertions` | `create` (assert) `revoke` (claim-addressed) `list` `retrieveEvent` |
+| `operatingTypes` | `create` `retrieve` `update` `list` `archive` (keys never recycled) |
+| `metricKeys` | `create` `retrieve` `update` `list` (built-ins flagged) `archive` |
+| `enrollments` | `create` (invite) `approve` `reject` `pause` `resume` `update` (set `operatingType`) `list` `retrieve` + nested `requirementOverrides` (create/retrieve/update/list/del) |
 | `distributions` | `create` `update` `retrieve` `list` `validate` `launch` `pause` `resume` `cancel` |
 | `deployments` | `retrieve` `list` `pause` `resume` `cancel` |
 | `connections` | `list` `retrieve` `revoke` |
@@ -346,6 +349,27 @@ event type. Then `.list()`, `.retrieve()`, `.update()`, `.rotateSecret()`, `.del
 | `payouts` | `list` `run` `exportCsv` `connectStatus` + nested `rules.create/retrieve/list/update/archive`, `rails.create/retrieve/list/update`, `batches.create/retrieve/list/export/confirm/cancel` |
 
 `resume` is the canonical verb on every surface — never `unpause`.
+
+## MIGRATING to 1.0.0-beta.5 (relationship naming)
+
+RELATIONSHIP_CORE renamed the pair-level nouns: an **entity** is who you have
+relationships with, a **relationship** is the durable bond. Nothing breaks:
+
+- `boomin.partners` / `boomin.partnerships` still work — they are deprecated
+  getters that **delegate** to `boomin.entities` / `boomin.relationships`, and
+  they will never be removed. New code should use the canonical names.
+- Requests now ride the canonical routes (`/entities`, `/relationships`).
+  Old ids (`ptnr_…`, `pship_…`) decode server-side **forever**; new responses
+  carry `ent_…` / `rel_…` ids and `object: "entity" | "relationship"`.
+- Types: `Entity` / `Relationship` are canonical; `Partner` / `Partnership`
+  remain as deprecated aliases. Webhook payloads stored before the flip keep
+  deserializing (`partnership` stays in the response field map).
+- New in beta.5: `boomin.assertions` (tenant truth, claim-addressed),
+  `boomin.operatingTypes` (capacity vocabulary), `boomin.metricKeys` (tenant
+  `x:` metrics; payout stays built-ins-only in v1),
+  `boomin.enrollments.requirementOverrides`, `enrollments.update`
+  (set/clear `operatingType`), and `programs.standingPreview` (read-only
+  what-ifs — the engine behind `boomin standing test`).
 
 ## Contributing
 

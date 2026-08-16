@@ -22,7 +22,7 @@ export {
   RESPONSE_FIELD_MAP,
 } from "./casing.js";
 
-export const SDK_VERSION = "1.0.0-beta.4";
+export const SDK_VERSION = "1.0.0-beta.5";
 export const DEFAULT_BASE_URL = "https://api.boomin.ai";
 export const API_PREFIX = "/v1/platform";
 const DEFAULT_TIMEOUT_MS = 30000;

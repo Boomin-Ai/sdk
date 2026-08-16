@@ -28,6 +28,16 @@ import path from "node:path";
 import Boomin, { BoominError } from "@boomin/sdk";
 import { ApiError } from "./errors.js";
 import { CLI_CLIENT_HEADER } from "./version.js";
+import {
+  assertionCommand,
+  enrollmentOverrides,
+  enrollmentSetType,
+  metricCommand,
+  operatingTypeCommand,
+  relationshipCommand,
+  standingCommand,
+} from "./relationship.js";
+import { networkCommand } from "./network-apply.js";
 
 const TERMINAL_OPERATION_STATUSES = new Set(["succeeded", "partial", "failed", "canceled"]);
 
@@ -274,7 +284,7 @@ export function listParams(flags, extra = {}) {
   });
 }
 
-function requireId(flags, usage) {
+export function requireId(flags, usage) {
   const id = flags._[0];
   if (!id) throw new Error(`An id is required. Usage: ${usage}`);
   return String(id);
@@ -620,10 +630,18 @@ export async function enrollmentCommand(subcommand, flags, ctx) {
       ["Status", (e) => e.status],
       ["Billing", (e) => e.billingStatus],
       ["Qualification", (e) => e.qualificationStatus],
+      ["Operating as", (e) => e.operatingType],
       ["Referral code", (e) => e.referralCode],
     ]));
   }
-  throw new Error(`Unknown enrollment subcommand: ${subcommand}. Use invite|approve|reject|list|get.`);
+  // Relationship-stack extensions (RELATIONSHIP_CORE §2/§5, CLI 0.7.0).
+  if (subcommand === "set-type") return enrollmentSetType(flags, ctx);
+  if (subcommand === "overrides") {
+    const overridesSub = flags._?.[0];
+    if (!overridesSub) throw new Error("Usage: npx @boomin/cli enrollment overrides <list|set|add|disable|clear> <enr_id> [...]");
+    return enrollmentOverrides(overridesSub, flags, ctx);
+  }
+  throw new Error(`Unknown enrollment subcommand: ${subcommand}. Use invite|approve|reject|list|get|set-type|overrides.`);
 }
 
 export async function partnershipCommand(subcommand, flags, ctx) {
@@ -1122,7 +1140,16 @@ const GROUPS = {
   program: programCommand,
   distribution: distributionCommand,
   enrollment: enrollmentCommand,
-  partnership: partnershipCommand,
+  // Canonical relationship stack (RELATIONSHIP_CORE, CLI 0.7.0). `partnership`
+  // stays an ALIAS of `relationship` forever — an address may alias, it may
+  // never break; both speak the canonical wire.
+  relationship: relationshipCommand,
+  partnership: relationshipCommand,
+  assertion: assertionCommand,
+  "operating-type": operatingTypeCommand,
+  metric: metricCommand,
+  standing: standingCommand,
+  network: networkCommand,
   connection: connectionCommand,
   payout: payoutCommand,
   webhook: webhookCommand,

@@ -1,4 +1,5 @@
 const DEFAULT_CONNECT_API_BASE = "https://api.boomin.ai/v1/connect";
+const DEFAULT_PLATFORM_API_BASE = "https://api.boomin.ai/v1/platform";
 const DEFAULT_AUDIENCE = "boomin.ai";
 
 const textEncoder = new TextEncoder();
@@ -41,6 +42,10 @@ export function createHandoffPayload(options) {
     externalUserId: options.externalUserId,
     email: options.email,
     name: options.name,
+    // Operating capacity by KEY (e.g. "advisor") — a tenant claim, so it
+    // rides the SIGNED payload. Boomin consumes it leniently: unknown or
+    // archived keys are skipped, never a reason to fail a signup.
+    ...(options.operatingType ? { operatingType: options.operatingType } : {}),
     metadata: options.metadata || {},
   };
 }
@@ -140,6 +145,95 @@ export async function getPartnerStanding(options) {
     throw error;
   }
   return data;
+}
+
+/** Canonical name (RELATIONSHIP_CORE): standing of one relationship. */
+export function getStanding(options) {
+  return getPartnerStanding(options);
+}
+
+// ── Assertions (RELATIONSHIP_CORE §4) — the platform-key surface ─────────────
+// Assertions are TENANT TRUTH: your backend computes a private condition
+// (verification, membership, employment) and asserts only the OUTCOME — Boomin
+// never sees the underlying data. Claim-addressed by (subject, key); the
+// subject is `externalUserId`+`issuer` (the pair your signed handoffs bind) or
+// an `entity` id. Requires a PLATFORM secret key (`sk_…`, scope
+// `assertions:write`) — never a Connect signing secret.
+
+async function platformRequest(options, path, body) {
+  if (!options?.secretKey) throw new Error("Assertion helpers require secretKey (a platform sk_ key with assertions:write).");
+  const apiBase = stripTrailingSlash(options.platformApiBase || options.apiBase || DEFAULT_PLATFORM_API_BASE);
+  const response = await fetch(`${apiBase}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${options.secretKey}`,
+      ...(options.brand ? { "Boomin-Brand": options.brand } : {}),
+      ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
+      ...(options.headers || {}),
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    const error = new Error(data.error?.message || data.message || `Boomin assertion request failed with ${response.status}`);
+    error.status = response.status;
+    error.code = data.error?.code || data.code;
+    error.response = data;
+    throw error;
+  }
+  return data;
+}
+
+/** Assert (create/refresh) a claim. Re-asserting with a fresh `expiresAt`
+ *  EXTENDS it — a refreshed expiry is a new event, same claim. */
+export async function assert(options) {
+  if (!options?.key) throw new Error("assert requires key.");
+  if (options.value === undefined) throw new Error("assert requires value (number or boolean).");
+  return platformRequest(options, "/assertions", removeEmpty({
+    entity: options.entity,
+    external_user_id: options.externalUserId,
+    issuer: options.issuer,
+    key: options.key,
+    value: options.value,
+    expires_at: options.expiresAt ? new Date(options.expiresAt).toISOString() : undefined,
+  }));
+}
+
+/** Revoke by claim address — `{externalUserId, issuer, key}` (or `entity`).
+ *  Never by `asrt_` event id: events are history, claims are state. */
+export async function revokeAssertion(options) {
+  if (!options?.key) throw new Error("revokeAssertion requires key.");
+  return platformRequest(options, "/assertions/revoke", removeEmpty({
+    entity: options.entity,
+    external_user_id: options.externalUserId,
+    issuer: options.issuer,
+    key: options.key,
+  }));
+}
+
+/**
+ * Forward a CONVERSION (a paid event) onto the relationship the referral code
+ * names — the gmv side of the loop. Rides the signed Connect events surface,
+ * so it needs `issuer` + `signingSecret` + `publicKey`. Idempotent on
+ * `eventId` (Boomin's source_event_id dedupe): pass a stable id derived from
+ * your own billing record (`atlantium_purchase_${invoice.id}`), and a retry —
+ * yours or a webhook redelivery — can never double-count.
+ */
+export async function recordConversion(options) {
+  if (!options?.referralCode && !options?.partnerRef) throw new Error("recordConversion requires referralCode.");
+  if (options.amountCents == null) throw new Error("recordConversion requires amountCents.");
+  return postMetricEvent(
+    {
+      ...options,
+      partnerRef: options.partnerRef || options.referralCode,
+      eventType: options.eventType || "purchase",
+      amount: options.amountCents,
+    },
+    "gmv_cents",
+    options.amountCents,
+  );
 }
 
 export function recordReferralClick(options) {
