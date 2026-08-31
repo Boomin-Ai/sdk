@@ -1,6 +1,6 @@
 {
   "name": "@boomin/server",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Server helpers for Boomin signed handoff and event ingestion.",
   "type": "module",
   "repository": {
