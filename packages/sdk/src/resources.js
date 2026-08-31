@@ -158,7 +158,7 @@ export class ProgramsClient extends ResourceClient {
 }
 
 /** Canonical since RELATIONSHIP_CORE: an ENTITY is who you have relationships
- *  with. `boomin.partners` delegates here (old `ptnr_` ids decode forever). */
+ *  with. `boomin.entities` delegates here. */
 export class EntitiesClient extends ResourceClient {
   retrieve(id, options) {
     return this._http.get(`/entities/${pathParam(id, "id")}`, undefined, options);
@@ -170,7 +170,7 @@ export class EntitiesClient extends ResourceClient {
 }
 
 /** Canonical since RELATIONSHIP_CORE: the durable pair-level bond.
- *  `boomin.partnerships` delegates here (old `pship_` ids decode forever). */
+ *  `boomin.relationships` delegates here. */
 export class RelationshipsClient extends ResourceClient {
   retrieve(id, options) {
     return this._http.get(`/relationships/${pathParam(id, "id")}`, undefined, options);
@@ -584,7 +584,7 @@ export class WebhooksClient extends ResourceClient {
 }
 
 /**
- * `payouts.rules` — how a partner EARNS.
+ * `payouts.rules` — how a entity EARNS.
  *
  * Nested under `payouts` on purpose. Distribution is the flagship primitive and
  * payouts is one supporting system; rules, rails and batches are PARTS of it,

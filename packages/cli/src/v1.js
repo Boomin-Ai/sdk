@@ -5,7 +5,7 @@
  * errors = {error:{code}}, list envelopes {object:'list',data,has_more} —
  * which the SDK hands back as {object,data,hasMore}).
  *
- * Groups: program, distribution, enrollment, partnership, connection, payout,
+ * Groups: program, distribution, enrollment, relationship, connection, payout,
  * webhook, events. Operation-returning commands (launch/pause/resume/cancel,
  * and 0.4.0's payout export/confirm) poll the operation to a terminal status by
  * default; --no-wait skips.
@@ -176,12 +176,12 @@ export function programUpdateParams(flags) {
 }
 
 export function enrollmentInviteParams(flags) {
-  if (!flags.program) throw new Error("--program is required. Usage: npx @boomin/cli enrollment invite --program prog_... --email partner@example.com");
-  if (!flags.email && !flags.partner) throw new Error("Pass --email or --partner to identify who to invite.");
+  if (!flags.program) throw new Error("--program is required. Usage: npx @boomin/cli enrollment invite --program prog_... --email entity@example.com");
+  if (!flags.email && !flags.entity) throw new Error("Pass --email or --entity to identify who to invite.");
   return removeEmpty({
     program: String(flags.program),
     email: flags.email ? String(flags.email) : undefined,
-    partner: flags.partner ? String(flags.partner) : undefined,
+    entity: flags.entity ? String(flags.entity) : undefined,
     name: flags.name ? String(flags.name) : undefined,
     referralCode: flags.referralCode ? String(flags.referralCode) : undefined,
     metadata: parseJsonFlag(flags.metadata, "metadata"),
@@ -371,14 +371,14 @@ const ENROLLMENT_COLUMNS = [
   { header: "APPROVAL", value: (e) => e.approvalStatus },
   { header: "STATUS", value: (e) => e.status },
   { header: "PROGRAM", value: (e) => e.program },
-  { header: "PARTNERSHIP", value: (e) => e.partnership },
+  { header: "RELATIONSHIP", value: (e) => e.relationship },
   { header: "CODE", value: (e) => e.referralCode ?? "" },
 ];
 
-const PARTNERSHIP_COLUMNS = [
+const RELATIONSHIP_COLUMNS = [
   { header: "ID", value: (p) => p.id },
   { header: "STATUS", value: (p) => p.status },
-  { header: "PARTNER", value: (p) => (typeof p.partner === "object" ? `${p.partner.name ?? p.partner.email ?? ""} (${p.partner.id})` : p.partner) },
+  { header: "ENTITY", value: (p) => (typeof p.entity === "object" ? `${p.entity.name ?? p.entity.email ?? ""} (${p.entity.id})` : p.entity) },
   { header: "STARTED", value: (p) => p.startedAt ?? "" },
 ];
 
@@ -482,7 +482,7 @@ export async function programCommand(subcommand, flags, ctx) {
     log(programSummary(program));
     // The id is the very next thing the operator types — hand it to them
     // inside the commands they will run, not buried in a summary line.
-    log(`\nNext: npx @boomin/cli enrollment invite --program ${program.id} --email partner@example.com`);
+    log(`\nNext: npx @boomin/cli enrollment invite --program ${program.id} --email entity@example.com`);
     log(`  or: npx @boomin/cli distribution create --name "Launch" --programs ${program.id}`);
     return;
   }
@@ -587,7 +587,7 @@ export async function enrollmentCommand(subcommand, flags, ctx) {
     log(formatObject(enrollment, [
       ["Enrollment", (e) => e.id],
       ["Program", (e) => e.program],
-      ["Partnership", (e) => e.partnership],
+      ["Relationship", (e) => e.relationship],
       ["Approval", (e) => e.approvalStatus],
       ["Status", (e) => e.status],
       ["Referral code", (e) => e.referralCode],
@@ -624,8 +624,8 @@ export async function enrollmentCommand(subcommand, flags, ctx) {
     return log(formatObject(enrollment, [
       ["Enrollment", (e) => e.id],
       ["Program", (e) => e.program],
-      ["Partnership", (e) => e.partnership],
-      ["Partner", (e) => e.partner],
+      ["Relationship", (e) => e.relationship],
+      ["Entity", (e) => e.entity],
       ["Approval", (e) => e.approvalStatus],
       ["Status", (e) => e.status],
       ["Billing", (e) => e.billingStatus],
@@ -644,52 +644,8 @@ export async function enrollmentCommand(subcommand, flags, ctx) {
   throw new Error(`Unknown enrollment subcommand: ${subcommand}. Use invite|approve|reject|list|get|set-type|overrides.`);
 }
 
-export async function partnershipCommand(subcommand, flags, ctx) {
-  const { client, log } = ctx;
-  if (subcommand === "list") {
-    const page = await client.partnerships.list(listParams(flags, { status: flags.status || undefined }));
-    if (flags.json) return log(JSON.stringify(page, null, 2));
-    log(formatTable(page.data, PARTNERSHIP_COLUMNS));
-    if (page.hasMore) log("(more — use --starting-after with the last id)");
-    return;
-  }
-  if (subcommand === "get") {
-    const id = requireId(flags, "npx @boomin/cli partnership get <pship_id>");
-    const partnership = await client.partnerships.retrieve(id);
-    if (flags.json) return log(JSON.stringify(partnership, null, 2));
-    log(formatObject(partnership, [
-      ["Partnership", (p) => p.id],
-      ["Status", (p) => p.status],
-      ["Partner", (p) => (typeof p.partner === "object" ? `${p.partner.name ?? p.partner.email ?? ""} (${p.partner.id})` : p.partner)],
-      ["Started", (p) => p.startedAt],
-      ["Ended", (p) => p.endedAt],
-    ]));
-    if (Array.isArray(partnership.enrollments) && partnership.enrollments.length) {
-      log("");
-      log(formatTable(partnership.enrollments, ENROLLMENT_COLUMNS));
-    }
-    return;
-  }
-  // `resume` is the canonical verb on every surface — shipped alongside pause.
-  if (subcommand === "pause" || subcommand === "resume" || subcommand === "end") {
-    const id = requireId(flags, `npx @boomin/cli partnership ${subcommand} <pship_id>`);
-    const partnership = await client.partnerships[subcommand](id);
-    if (flags.json) return log(JSON.stringify(partnership, null, 2));
-    return log(formatObject(partnership, [
-      ["Partnership", (p) => p.id],
-      ["Status", (p) => p.status],
-      // A relationship pause moves this partner's own INSTRUMENTS, never the
-      // shared channels they sit on — so the verb reports link codes, plus the
-      // channels those links live on for context.
-      ["Links paused", (p) => (p.linksPaused ? p.linksPaused.join(", ") || "(none)" : undefined)],
-      ["Links resumed", (p) => (p.linksResumed ? p.linksResumed.join(", ") || "(none)" : undefined)],
-      ["Channels", (p) => (p.channels ? p.channels.join(", ") || "(none)" : undefined)],
-      ["Ended", (p) => p.endedAt],
-    ]));
-  }
-  throw new Error(`Unknown partnership subcommand: ${subcommand}. Use list|get|pause|resume|end.`);
-}
-
+// Legacy partnership command implementation removed in the 2026-08-31 hard
+// break — the canonical relationshipCommand is imported from relationship.js.
 export async function connectionCommand(subcommand, flags, ctx) {
   const { client, log } = ctx;
   if (subcommand === "list") {
@@ -829,7 +785,7 @@ function printExport(result, flags, log) {
   return undefined;
 }
 
-/** `payout rules …` — how a partner EARNS (scope: payout_rules:read|write). */
+/** `payout rules …` — how a entity EARNS (scope: payout_rules:read|write). */
 async function payoutRulesCommand(verb, flags, ctx) {
   const { client, log } = ctx;
   if (verb === "list") {
@@ -1057,7 +1013,7 @@ export async function payoutCommand(subcommand, flags, ctx) {
     log(`Rails: ${Array.isArray(status.rails) && status.rails.length ? status.rails.map((rail) => rail.rail ?? rail.id ?? JSON.stringify(rail)).join(", ") : "(none configured)"}`);
     if (status.stripe) {
       log(`Stripe configured: ${status.stripe.configured ? "yes" : "no"}`);
-      log(`Partner payout accounts: ${status.stripe.partnerAccounts} (${status.stripe.partnerAccountsPayoutsEnabled} payouts-enabled)`);
+      log(`Entity payout accounts: ${status.stripe.entityAccounts} (${status.stripe.entityAccountsPayoutsEnabled} payouts-enabled)`);
     }
     return;
   }
@@ -1140,11 +1096,9 @@ const GROUPS = {
   program: programCommand,
   distribution: distributionCommand,
   enrollment: enrollmentCommand,
-  // Canonical relationship stack (RELATIONSHIP_CORE, CLI 0.7.0). `partnership`
-  // stays an ALIAS of `relationship` forever — an address may alias, it may
-  // never break; both speak the canonical wire.
+  // Canonical relationship stack (RELATIONSHIP_CORE). The legacy `partnership`
+  // command alias was removed in the 2026-08-31 hard break (owner decision).
   relationship: relationshipCommand,
-  partnership: relationshipCommand,
   assertion: assertionCommand,
   "operating-type": operatingTypeCommand,
   metric: metricCommand,

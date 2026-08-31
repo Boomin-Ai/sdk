@@ -1,7 +1,7 @@
 {
   "name": "@boomin/sdk",
   "version": "1.0.0-beta.5",
-  "description": "Boomin platform SDK — programmable distribution infrastructure (programs, partnerships, enrollments, distributions, deployments, performance, payouts).",
+  "description": "Boomin platform SDK — programmable distribution infrastructure (programs, relationships, enrollments, distributions, deployments, performance, payouts).",
   "type": "module",
   "repository": {
     "type": "git",
@@ -49,7 +49,7 @@
   "keywords": [
     "boomin",
     "distribution",
-    "partnerships",
+    "relationships",
     "affiliate",
     "referral",
     "payouts",

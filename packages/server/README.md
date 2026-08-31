@@ -17,8 +17,8 @@ export const GET = createBoominCreatorJoinHandler({
   redirectUri: "https://your-app.com/creator-program",
   getCurrentUser: async () => ({
     externalUserId: "user_123",
-    email: "partner@example.com",
-    name: "Partner",
+    email: "entity@example.com",
+    name: "Entity",
   }),
 });
 ```
@@ -28,14 +28,14 @@ Never expose handoff signing secrets in browser code.
 ## Referral metrics
 
 ```js
-import { getPartnerStanding, recordReferralClick, recordSale, recordSignup } from "@boomin/server";
+import { getStanding, recordReferralClick, recordSale, recordSignup } from "@boomin/server";
 
 await recordReferralClick({
   publicKey: process.env.BOOMIN_CONNECT_PUBLIC_KEY,
   programId: process.env.BOOMIN_CONNECT_PROGRAM_ID,
   issuer: process.env.BOOMIN_HANDOFF_ISSUER,
   signingSecret: process.env.BOOMIN_HANDOFF_SIGNING_SECRET,
-  partnerRef: "ABC123",
+  entityRef: "ABC123",
 });
 
 await recordSale({
@@ -43,12 +43,12 @@ await recordSale({
   programId: process.env.BOOMIN_CONNECT_PROGRAM_ID,
   issuer: process.env.BOOMIN_HANDOFF_ISSUER,
   signingSecret: process.env.BOOMIN_HANDOFF_SIGNING_SECRET,
-  partnerRef: "ABC123",
+  entityRef: "ABC123",
   saleCount: 1,
   gmvCents: 4900,
 });
 
-const standing = await getPartnerStanding({
+const standing = await getStanding({
   publicKey: process.env.BOOMIN_CONNECT_PUBLIC_KEY,
   programId: process.env.BOOMIN_CONNECT_PROGRAM_ID,
   issuer: process.env.BOOMIN_HANDOFF_ISSUER,

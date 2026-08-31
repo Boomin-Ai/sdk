@@ -10,8 +10,8 @@ import Boomin, {
   type Enrollment,
   type List,
   type Operation,
-  type Partnership,
-  type PartnershipLifecycleResult,
+  type Relationship,
+  type RelationshipLifecycleResult,
   type BoominEvent,
   constructEvent,
 } from "../src/index.js";
@@ -47,24 +47,24 @@ async function exercise(): Promise<void> {
 
   const enrollment: Enrollment = await boomin.enrollments.create({ program: "prog_1", email: "a@b.c" });
   const _approval: "pending" | "approved" | "rejected" = enrollment.approvalStatus;
-  // pause/resume resolve the partnership PLUS what the verb actually touched:
-  // this partner's link codes and the channels those links live on — never
+  // pause/resume resolve the relationship PLUS what the verb actually touched:
+  // this entity's link codes and the channels those links live on — never
   // deployment counts, which is an action a relationship verb must not take.
-  const partnership: PartnershipLifecycleResult = await boomin.partnerships.resume("ptn_1");
-  const _pstatus: "pending" | "active" | "paused" | "ended" = partnership.status;
-  const _stillAPartnership: Partnership = partnership;
-  const _linksResumed: string[] | undefined = partnership.linksResumed;
-  const _channels: string[] | undefined = (await boomin.partnerships.pause("ptn_1")).channels;
-  void [_stillAPartnership, _linksResumed, _channels];
+  const relationship: RelationshipLifecycleResult = await boomin.relationships.resume("ptn_1");
+  const _pstatus: "pending" | "active" | "paused" | "ended" = relationship.status;
+  const _stillARelationship: Relationship = relationship;
+  const _linksResumed: string[] | undefined = relationship.linksResumed;
+  const _channels: string[] | undefined = (await boomin.relationships.pause("ptn_1")).channels;
+  void [_stillARelationship, _linksResumed, _channels];
 
   // A deployment is a CHANNEL: it names its PROGRAM, and is filtered by one.
   const deployment: Deployment = await boomin.deployments.retrieve("dep_1");
-  const _mode: "owned" | "partner_program" | "paid" = deployment.mode;
+  const _mode: "owned" | "program" | "paid" = deployment.mode;
   const _program: string | null | undefined = deployment.program;
   const _channelPage: List<Deployment> = await boomin.deployments.list({
     distribution: "dist_1",
     program: "prog_1",
-    mode: "partner_program",
+    mode: "program",
     status: "active",
     limit: 5,
   });
@@ -80,7 +80,7 @@ async function exercise(): Promise<void> {
   // nested clients
   await boomin.programs.requirements.create("prog_1", { scope: "program_entry", metricKey: "referral_count" });
   await boomin.programs.connectConfig.update("prog_1", { allowedOrigins: ["https://example.com"] });
-  // `enrollment` is how a direct create says WHICH PARTNER earned it — the
+  // `enrollment` is how a direct create says WHICH ENTITY earned it — the
   // channel no longer carries that answer.
   const measured = await boomin.performance.events.create({
     deployment: "dep_1",
@@ -187,7 +187,7 @@ async function exercise(): Promise<void> {
   // @ts-expect-error payouts.run requires both period bounds
   await boomin.payouts.run({ periodStart: "2026-08-01" });
   // @ts-expect-error retrieve takes a string id
-  await boomin.partners.retrieve(42);
+  await boomin.entities.retrieve(42);
 }
 
 void exercise;

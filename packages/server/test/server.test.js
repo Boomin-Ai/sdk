@@ -10,7 +10,6 @@ import {
   recordConversion,
   createHandoffPayload,
   getStanding,
-  getPartnerStanding,
 } from "../src/server.js";
 
 const realFetch = globalThis.fetch;
@@ -90,7 +89,7 @@ test("recordConversion rides the signed events surface, idempotent on eventId", 
   nodeAssert.equal(call.url, "https://api.boomin.ai/v1/connect/events");
   nodeAssert.equal(call.headers["X-Boomin-Issuer"], "t.example");
   nodeAssert.equal(typeof call.headers["X-Boomin-Signature"], "string");
-  nodeAssert.equal(call.body.partner_ref, "ref_abc");
+  nodeAssert.equal(call.body.entity_ref, "ref_abc");
   nodeAssert.equal(call.body.metric_key, "gmv_cents");
   nodeAssert.equal(call.body.amount, 2900);
   nodeAssert.equal(call.body.event_id, "atlantium_purchase_in_1");
@@ -104,11 +103,9 @@ test("recordConversion refuses to guess an amount", async () => {
   );
 });
 
-test("getStanding is the canonical name; getPartnerStanding stays honored", async () => {
+test("getStanding is the only standing export (legacy alias hard-removed 2026-08-31)", async () => {
   const options = { publicKey: "pk_1", issuer: "t.example", signingSecret: "whsec_1", externalUserId: "u_1" };
   await getStanding(options);
   nodeAssert.equal(last().url, "https://api.boomin.ai/v1/connect/standing");
-  await getPartnerStanding(options);
-  nodeAssert.equal(last().url, "https://api.boomin.ai/v1/connect/standing");
-  nodeAssert.equal(calls.length, 2);
+  nodeAssert.equal(calls.length, 1);
 });

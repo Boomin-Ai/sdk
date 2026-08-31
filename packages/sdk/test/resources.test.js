@@ -34,24 +34,18 @@ const CASES = [
   { name: "programs.handoffConfig.retrieve", invoke: (b) => b.programs.handoffConfig.retrieve("prog_1"), method: "GET", path: "/programs/prog_1/handoff_config" },
   { name: "programs.handoffConfig.update", invoke: (b) => b.programs.handoffConfig.update("prog_1", { issuer: "acme" }), method: "POST", path: "/programs/prog_1/handoff_config", body: { issuer: "acme" } },
 
-  // partners
+  // entities
   { name: "entities.retrieve", invoke: (b) => b.entities.retrieve("ent_1"), method: "GET", path: "/entities/ent_1" },
   { name: "entities.list", invoke: (b) => b.entities.list(), method: "GET", path: "/entities" },
-  // Deprecated getters DELEGATE to the canonical clients: old code keeps
-  // working and speaks the canonical wire (old ids decode forever server-side).
-  { name: "partners.retrieve (deprecated → entities)", invoke: (b) => b.partners.retrieve("ptnr_1"), method: "GET", path: "/entities/ptnr_1" },
-  { name: "partners.list (deprecated → entities)", invoke: (b) => b.partners.list(), method: "GET", path: "/entities" },
+  // Deprecated partner/partnership getters were removed 2026-08-31 (hard break).
 
-  // partnerships
+  // relationships
   { name: "relationships.list", invoke: (b) => b.relationships.list({ status: "active" }), method: "GET", path: "/relationships?status=active" },
   { name: "relationships.retrieve", invoke: (b) => b.relationships.retrieve("rel_1"), method: "GET", path: "/relationships/rel_1" },
   { name: "relationships.pause", invoke: (b) => b.relationships.pause("rel_1"), method: "POST", path: "/relationships/rel_1/pause", body: {} },
   { name: "relationships.resume", invoke: (b) => b.relationships.resume("rel_1"), method: "POST", path: "/relationships/rel_1/resume", body: {} },
   { name: "relationships.end", invoke: (b) => b.relationships.end("rel_1", { reason: "done" }), method: "POST", path: "/relationships/rel_1/end", body: { reason: "done" } },
   { name: "relationships.updatePermissions", invoke: (b) => b.relationships.updatePermissions("rel_1", { permissions: { publish: true } }), method: "POST", path: "/relationships/rel_1/permissions", body: { permissions: { publish: true } } },
-  // Deprecated getter delegates — legacy pship_ ids ride the canonical route.
-  { name: "partnerships.retrieve (deprecated → relationships)", invoke: (b) => b.partnerships.retrieve("pship_1"), method: "GET", path: "/relationships/pship_1" },
-  { name: "partnerships.updatePermissions (deprecated → relationships)", invoke: (b) => b.partnerships.updatePermissions("pship_1", { permissions: { publish: true } }), method: "POST", path: "/relationships/pship_1/permissions", body: { permissions: { publish: true } } },
   // Relationship stack (RELATIONSHIP_CORE §2/§4/§5).
   { name: "assertions.create", invoke: (b) => b.assertions.create({ externalUserId: "u_1", issuer: "atlantium.ai", key: "advisor_verified", value: true, expiresAt: "2030-01-01T00:00:00Z" }), method: "POST", path: "/assertions", body: { external_user_id: "u_1", issuer: "atlantium.ai", key: "advisor_verified", value: true, expires_at: "2030-01-01T00:00:00Z" } },
   { name: "assertions.revoke", invoke: (b) => b.assertions.revoke({ entity: "ent_1", key: "advisor_verified" }), method: "POST", path: "/assertions/revoke", body: { entity: "ent_1", key: "advisor_verified" } },
@@ -159,7 +153,7 @@ for (const wire of CASES) {
 test("the 12 resource clients exist", () => {
   const { boomin } = createClient();
   for (const client of [
-    "programs", "partners", "partnerships", "enrollments", "distributions", "deployments",
+    "programs", "entities", "relationships", "enrollments", "distributions", "deployments",
     "connections", "performance", "events", "operations", "webhooks", "payouts",
   ]) {
     assert.ok(boomin[client], `boomin.${client} missing`);

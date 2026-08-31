@@ -25,9 +25,9 @@ npx @boomin/cli distribution create --name "Launch" --objective acquisition --pr
 npx @boomin/cli distribution validate <dist_id>
 npx @boomin/cli distribution launch <dist_id>          # 202 + operation; polls to terminal (--no-wait skips)
 npx @boomin/cli distribution pause|resume|cancel <dist_id>
-npx @boomin/cli enrollment invite --program prog_... --email partner@example.com
+npx @boomin/cli enrollment invite --program prog_... --email entity@example.com
 npx @boomin/cli enrollment approve|reject|list|get ...
-npx @boomin/cli partnership list|get|pause|resume|end ...
+npx @boomin/cli relationship list|get|pause|resume|end ...
 npx @boomin/cli connection list|get|revoke ...
 npx @boomin/cli payout list|run|export [--out payouts.csv]|connect
 npx @boomin/cli payout rules|rails|batches ...            # see below
@@ -50,7 +50,7 @@ npx @boomin/cli payout rails create --rail csv_batch --format paypal_payouts_csv
   --columns '[{"key":"email","header":"Email Address"},{"key":"amount","header":"Amount"}]'
 npx @boomin/cli payout rails list|show <prail_id>|update <prail_id> --status disabled
 
-# How a partner EARNS. Money is --per-unit-minor / --bonus-minor, in minor
+# How a entity EARNS. Money is --per-unit-minor / --bonus-minor, in minor
 # units of the rule's currency — never cents.
 npx @boomin/cli payout rules create --name "Rev share" --type revenue_split --program prog_... --rate-bps 2000
 npx @boomin/cli payout rules create --name "Registration CPA" --type cpa --program prog_... \

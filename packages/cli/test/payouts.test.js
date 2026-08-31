@@ -317,7 +317,7 @@ test("payout batches create freezes synchronously and points at export", async (
 });
 
 test("payout batches export polls the operation, reads the batch, writes --out", async () => {
-  const csv = "Email Address,Amount\npartner@example.com,42.00\n";
+  const csv = "Email Address,Amount\nentity@example.com,42.00\n";
   const fetchImpl = createMockFetch([
     { status: 202, body: { batch: "pb_1", status: "exporting", operation: "op_1" } },
     { status: 200, body: { id: "op_1", status: "running" } },

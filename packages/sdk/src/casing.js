@@ -94,20 +94,20 @@ export const RESPONSE_FIELD_MAP = Object.freeze({
   // distributions.ts serializeOperation — `result` embeds a deployment's
   // external_ids, so the name is declared here too and caught at depth.
   operation: ["external_ids"],
-  // relationships.ts serializePartnership — customer-extensible terms.
+  // relationships.ts serializeRelationship — customer-extensible terms.
   // `relationship` is the canonical discriminator (RELATIONSHIP_CORE naming);
-  // `partnership` is retained FOREVER for stored payloads written before the
+  // `relationship` is retained FOREVER for stored payloads written before the
   // flip (webhook deliveries, exported events) — a stored object may alias,
   // it may never stop deserializing.
   relationship: ["permissions", "rights", "compensation_defaults"],
-  partnership: ["permissions", "rights", "compensation_defaults"],
+  relationship: ["permissions", "rights", "compensation_defaults"],
   // relationships.ts serializeEnrollment / serializeConnection
   // (connection.grants[].permissions is a per-grant permission map)
   enrollment: ["metadata"],
   connection: ["metadata", "permissions"],
-  // entities.ts (canonical) / partners.ts (stored payloads) / programs.ts
+  // entities.ts (canonical) / entities.ts (stored payloads) / programs.ts
   entity: ["metadata"],
-  partner: ["metadata"],
+  entity: ["metadata"],
   program: ["metadata"],
   "program.requirement": ["metadata"],
   "program.tier": ["metadata"],
@@ -239,7 +239,7 @@ export const REQUEST_FIELD_MAP = Object.freeze({
     rights: OPAQUE,
     compensation_defaults: OPAQUE,
   },
-  "partnerships.updatePermissions": {
+  "relationships.updatePermissions": {
     permissions: OPAQUE,
     rights: OPAQUE,
     compensation_defaults: OPAQUE,

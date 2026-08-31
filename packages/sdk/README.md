@@ -3,7 +3,7 @@
 The Boomin platform SDK — programmable distribution infrastructure. A
 **Distribution** is a coordinated business objective (Boomin's PaymentIntent)
 that fans out into concrete **Deployments** — one per execution channel: a
-partner program (whose enrolled partners each carry their own link on it), an
+partner program (whose enrolled entities each carry their own link on it), an
 owned channel, or paid media.
 
 Built on `fetch` + WebCrypto only: works on Node >= 18, Cloudflare Workers,
@@ -20,7 +20,7 @@ import Boomin from "@boomin/sdk";
 
 const boomin = new Boomin(process.env.BOOMIN_SECRET_KEY);
 
-// 1. Invite a partner into a program (enrollment payload carries the program)
+// 1. Invite a entity into a program (enrollment payload carries the program)
 const enrollment = await boomin.enrollments.create({
   program: "prog_123",
   email: "creator@example.com",
@@ -161,7 +161,7 @@ List calls resolve one page (`{ object: "list", data, hasMore }` — the wire's
 every page:
 
 ```js
-const page = await boomin.partnerships.list({ limit: 20 });
+const page = await boomin.relationships.list({ limit: 20 });
 page.hasMore; // boolean
 
 for await (const enrollment of boomin.enrollments.list({ program: "prog_123" })) {
@@ -183,7 +183,7 @@ try {
   } else if (err instanceof FundingRequiredError) {
     // fund the brand wallet, the launch operation waits (code: funding_required)
   } else if (err.code === "band_limit_reached") {
-    // upgrade the partner band
+    // upgrade the entity band
   }
 }
 ```
@@ -213,7 +213,7 @@ existing 400-family catch keeps working.
 ### Payouts
 
 Money-out is one primitive with three parts, and the client nests exactly like
-the REST tree: `payouts.rules` (how a partner **earns**), `payouts.rails` (how
+the REST tree: `payouts.rules` (how a entity **earns**), `payouts.rails` (how
 money physically **leaves**), `payouts.batches` (one frozen disbursement run).
 There is no root `payoutRules` / `payoutRails` client.
 
@@ -235,7 +235,7 @@ const rail = await boomin.payouts.rails.create({
   },
 });
 
-// 2. A rule — how a partner earns. Money is *Minor, never cents.
+// 2. A rule — how a entity earns. Money is *Minor, never cents.
 const rule = await boomin.payouts.rules.create({
   name: "Registration CPA",
   type: "cpa",                                       // revenue_split | cpa | threshold_bonus
@@ -333,8 +333,8 @@ event type. Then `.list()`, `.retrieve()`, `.update()`, `.rotateSecret()`, `.del
 | Client | Methods |
 | --- | --- |
 | `programs` | `create` `retrieve` `update` `list` `standingPreview` + nested `requirements` / `tiers` (CRUD) / `connectConfig` / `handoffConfig` (retrieve, update) |
-| `entities` | `retrieve` `list` (canonical; `partners` delegates here) |
-| `relationships` | `list` `retrieve` `pause` `resume` `end` `updatePermissions` (canonical; `partnerships` delegates here) |
+| `entities` | `retrieve` `list` (canonical; `entities` delegates here) |
+| `relationships` | `list` `retrieve` `pause` `resume` `end` `updatePermissions` (canonical; `relationships` delegates here) |
 | `assertions` | `create` (assert) `revoke` (claim-addressed) `list` `retrieveEvent` |
 | `operatingTypes` | `create` `retrieve` `update` `list` `archive` (keys never recycled) |
 | `metricKeys` | `create` `retrieve` `update` `list` (built-ins flagged) `archive` |
@@ -355,15 +355,15 @@ event type. Then `.list()`, `.retrieve()`, `.update()`, `.rotateSecret()`, `.del
 RELATIONSHIP_CORE renamed the pair-level nouns: an **entity** is who you have
 relationships with, a **relationship** is the durable bond. Nothing breaks:
 
-- `boomin.partners` / `boomin.partnerships` still work — they are deprecated
+- `boomin.entities` / `boomin.relationships` still work — they are deprecated
   getters that **delegate** to `boomin.entities` / `boomin.relationships`, and
   they will never be removed. New code should use the canonical names.
 - Requests now ride the canonical routes (`/entities`, `/relationships`).
-  Old ids (`ptnr_…`, `pship_…`) decode server-side **forever**; new responses
+  Legacy ids (`ptnr_…`, `pship_…`) no longer decode (2026-08-31 hard break); responses
   carry `ent_…` / `rel_…` ids and `object: "entity" | "relationship"`.
-- Types: `Entity` / `Relationship` are canonical; `Partner` / `Partnership`
+- Types: `Entity` / `Relationship` are canonical; `Entity` / `Relationship`
   remain as deprecated aliases. Webhook payloads stored before the flip keep
-  deserializing (`partnership` stays in the response field map).
+  deserializing (`relationship` stays in the response field map).
 - New in beta.5: `boomin.assertions` (tenant truth, claim-addressed),
   `boomin.operatingTypes` (capacity vocabulary), `boomin.metricKeys` (tenant
   `x:` metrics; payout stays built-ins-only in v1),

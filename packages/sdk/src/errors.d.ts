@@ -100,7 +100,7 @@ export class APIError extends BoominError {}
 
 /** code `operation_conflict` / `cancellation_in_progress` — a live operation holds the subject. */
 export class OperationConflictError extends ConflictError {}
-/** code `band_limit_reached` — the billing band's active-partner limit is hit. */
+/** code `band_limit_reached` — the billing band's active-entity limit is hit. */
 export class BandLimitReachedError extends InvalidRequestError {}
 /** code `funding_required` — the action needs wallet funds (operation waits). */
 export class FundingRequiredError extends InvalidRequestError {}

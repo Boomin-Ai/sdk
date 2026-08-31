@@ -354,14 +354,14 @@ test("connectStatus rails carry identity and state only — never config", async
       body: {
         object: "payouts.connect_status",
         rails: [{ id: "prail_1", object: "payout_rail", rail: "csv_batch", status: "active", is_default: true }],
-        stripe: { configured: true, partner_accounts: 3, partner_accounts_payouts_enabled: 2 },
+        stripe: { configured: true, entity_accounts: 3, entity_accounts_payouts_enabled: 2 },
       },
     },
   ]);
   const status = await boomin.payouts.connectStatus();
   assert.equal(status.rails[0].isDefault, true);
   assert.equal(status.rails[0].config, undefined, "config is payout_rails:read, not payouts:read");
-  assert.equal(status.stripe.partnerAccountsPayoutsEnabled, 2);
+  assert.equal(status.stripe.entityAccountsPayoutsEnabled, 2);
 });
 
 // ── Error taxonomy ────────────────────────────────────────────────────────────

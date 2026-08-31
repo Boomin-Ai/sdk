@@ -71,7 +71,7 @@ export interface BoominMetricEventHelperOptions {
   signingSecret: string;
   publicKey: string;
   programId?: string;
-  partnerRef: string;
+  entityRef: string;
   eventId?: string;
   eventType?: string;
   amount?: number;
@@ -110,10 +110,10 @@ export interface BoominAssertOptions extends BoominAssertionAuthOptions, BoominA
   expiresAt?: string | number | Date;
 }
 
-export interface BoominConversionOptions extends Omit<BoominMetricEventHelperOptions, "partnerRef" | "amount"> {
-  /** The referral code that attributes this conversion (or partnerRef). */
+export interface BoominConversionOptions extends Omit<BoominMetricEventHelperOptions, "entityRef" | "amount"> {
+  /** The referral code that attributes this conversion (or entityRef). */
   referralCode?: string;
-  partnerRef?: string;
+  entityRef?: string;
   /** Minor units. Idempotent per `eventId` — derive it from your billing record. */
   amountCents: number;
 }
@@ -122,7 +122,7 @@ export function stableJson(value: unknown): string;
 export function assert(options: BoominAssertOptions): Promise<Record<string, unknown>>;
 export function revokeAssertion(options: BoominAssertionAuthOptions & BoominAssertionSubject & { key: string }): Promise<Record<string, unknown>>;
 export function recordConversion(options: BoominConversionOptions): Promise<Record<string, unknown>>;
-/** Canonical name; `getPartnerStanding` stays honored forever. */
+/** Canonical name; the legacy alias was removed in the 2026-08-31 hard break. */
 export function getStanding(options: BoominStandingOptions): Promise<Record<string, unknown>>;
 export function createHandoffPayload(options: BoominHandoffOptions): BoominHandoffPayload;
 export function signHandoffPayload(payload: BoominHandoffPayload, signingSecret: string): Promise<string>;
@@ -130,7 +130,6 @@ export function createSignedHandoff(options: BoominHandoffOptions): Promise<Boom
 export function postHandoff(options: BoominHandoffOptions | { apiBase?: string; payload: BoominHandoffPayload; signature: string }): Promise<Record<string, unknown>>;
 export function postProgramEvent(options: BoominProgramEventOptions): Promise<Record<string, unknown>>;
 export function createStandingPayload(options: Omit<BoominStandingOptions, "signingSecret">): Record<string, unknown>;
-export function getPartnerStanding(options: BoominStandingOptions): Promise<Record<string, unknown>>;
 export function recordReferralClick(options: BoominMetricEventHelperOptions): Promise<Record<string, unknown>>;
 export function recordSignup(options: BoominMetricEventHelperOptions): Promise<Record<string, unknown>>;
 export function recordSale(options: BoominMetricEventHelperOptions): Promise<Record<string, unknown>>;

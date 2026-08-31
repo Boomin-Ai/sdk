@@ -90,8 +90,8 @@ test("override builders: patch needs --requirement, add needs metric+scope", () 
 
 // ── Wire contracts ────────────────────────────────────────────────────────────
 
-test("relationship list speaks the canonical route; partnership is an alias of it", async () => {
-  for (const group of ["relationship", "partnership"]) {
+test("relationship list speaks the canonical route; relationship is an alias of it", async () => {
+  for (const group of ["relationship", "relationship"]) {
     const fetchMock = createMockFetch([{ status: 200, body: { object: "list", data: [], has_more: false } }]);
     await run(group, "list", {}, fetchMock);
     assert.equal(fetchMock.calls[0].url, `${BASE}/relationships`);
@@ -131,7 +131,7 @@ test("standing test posts {enrollment, simulate} and renders the verdict + prove
     body: {
       object: "program.standing_preview", program: "prog_1", dry_run: true,
       enrollment: {
-        object: "program.standing_result", enrollment: "enr_1", partner: "ent_1",
+        object: "program.standing_result", enrollment: "enr_1", entity: "ent_1",
         status: "qualified", stored_status: "not_qualified", score: 1,
         met: [{ requirement: "r1", metric_key: "assert:advisor_verified", scope: "program_maintenance" }],
         failed: [],

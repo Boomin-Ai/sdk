@@ -125,8 +125,8 @@ export function createStandingPayload(options) {
   });
 }
 
-export async function getPartnerStanding(options) {
-  if (!options?.signingSecret) throw new Error("getPartnerStanding requires signingSecret.");
+export async function getStanding(options) {
+  if (!options?.signingSecret) throw new Error("getStanding requires signingSecret.");
   const apiBase = stripTrailingSlash(options.apiBase || DEFAULT_CONNECT_API_BASE);
   const payload = options.payload || createStandingPayload(options);
   const signature = options.signature || await signHandoffPayload(payload, options.signingSecret);
@@ -147,10 +147,7 @@ export async function getPartnerStanding(options) {
   return data;
 }
 
-/** Canonical name (RELATIONSHIP_CORE): standing of one relationship. */
-export function getStanding(options) {
-  return getPartnerStanding(options);
-}
+// Legacy standing alias removed in the 2026-08-31 hard break (owner decision).
 
 // ── Assertions (RELATIONSHIP_CORE §4) — the platform-key surface ─────────────
 // Assertions are TENANT TRUTH: your backend computes a private condition
@@ -222,12 +219,12 @@ export async function revokeAssertion(options) {
  * yours or a webhook redelivery — can never double-count.
  */
 export async function recordConversion(options) {
-  if (!options?.referralCode && !options?.partnerRef) throw new Error("recordConversion requires referralCode.");
+  if (!options?.referralCode && !options?.entityRef) throw new Error("recordConversion requires referralCode.");
   if (options.amountCents == null) throw new Error("recordConversion requires amountCents.");
   return postMetricEvent(
     {
       ...options,
-      partnerRef: options.partnerRef || options.referralCode,
+      entityRef: options.entityRef || options.referralCode,
       eventType: options.eventType || "purchase",
       amount: options.amountCents,
     },
@@ -267,13 +264,13 @@ export function recordProductUsage(options) {
 
 async function postMetricEvent(options, metricKey, defaultAmount) {
   if (!options?.publicKey) throw new Error("Program event helpers require publicKey.");
-  if (!options?.partnerRef) throw new Error("Program event helpers require partnerRef.");
+  if (!options?.entityRef) throw new Error("Program event helpers require entityRef.");
   const body = removeEmpty({
     event_id: options.eventId || crypto.randomUUID(),
     event_type: options.eventType || metricKey,
     publicKey: options.publicKey,
     programId: options.programId,
-    partner_ref: options.partnerRef,
+    entity_ref: options.entityRef,
     metric_key: metricKey,
     amount: options.amount ?? defaultAmount,
     currency: options.currency,

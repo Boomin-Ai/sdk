@@ -69,23 +69,10 @@ export class Boomin {
     this.payouts = new PayoutsClient(this._http);
   }
 
-  /**
-   * @deprecated RELATIONSHIP_CORE naming: use `boomin.entities`. Delegates to
-   * the canonical client (requests go to `/entities`; old `ptnr_` ids decode
-   * forever). Never removed.
-   */
-  get partners() {
-    return this.entities;
-  }
-
-  /**
-   * @deprecated RELATIONSHIP_CORE naming: use `boomin.relationships`.
-   * Delegates to the canonical client (requests go to `/relationships`; old
-   * `pship_` ids decode forever). Never removed.
-   */
-  get partnerships() {
-    return this.relationships;
-  }
+  // The deprecated `partners`/`partnerships` getters were REMOVED in the
+  // 2026-08-31 hard break (owner decision) alongside the server-side deletion
+  // of ptnr_/pship_ decoding and the /v1/partners route aliases. Canonical
+  // `entities`/`relationships` are the only client surfaces.
 }
 
 export default Boomin;

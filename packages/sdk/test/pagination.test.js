@@ -11,7 +11,7 @@ const page = (ids, hasMore) => ({
 
 test("awaiting a list resolves a single page envelope", async () => {
   const { boomin, calls } = createClient([page(["ptr_1", "ptr_2"], true)]);
-  const result = await boomin.partners.list({ limit: 2 });
+  const result = await boomin.entities.list({ limit: 2 });
   assert.equal(result.object, "list");
   assert.equal(result.hasMore, true, "the wire's has_more is handed back as hasMore");
   assert.equal(result.has_more, undefined, "the snake_case spelling is gone from the result");
@@ -57,7 +57,7 @@ test("empty first page yields nothing", async () => {
 
 test("early break stops fetching further pages", async () => {
   const { boomin, calls } = createClient([page(["a", "b"], true), page(["c"], true)]);
-  for await (const item of boomin.partners.list()) {
+  for await (const item of boomin.entities.list()) {
     if (item.id === "a") break;
   }
   assert.equal(calls.length, 1);
@@ -66,7 +66,7 @@ test("early break stops fetching further pages", async () => {
 test("list promise supports catch/finally", async () => {
   const { boomin } = createClient([{ status: 500, body: { error: { message: "x" } } }]);
   let finallyRan = false;
-  const err = await boomin.partners
+  const err = await boomin.entities
     .list()
     .catch((e) => e)
     .finally(() => {

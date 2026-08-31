@@ -110,7 +110,7 @@ export type Metadata = Record<string, string | number | boolean | null>;
 // Object vocabulary (statuses are text + unions server-side; unions stay open)
 // ---------------------------------------------------------------------------
 
-export type PartnershipStatus = "pending" | "active" | "paused" | "ended";
+export type RelationshipStatus = "pending" | "active" | "paused" | "ended";
 export type EnrollmentApprovalStatus = "pending" | "approved" | "rejected";
 export type EnrollmentStatus = "active" | "paused" | "archived";
 export type EnrollmentBillingStatus = "none" | "billable" | "exempt";
@@ -150,10 +150,10 @@ export type BudgetMode = "none" | "metered" | "funded";
 export type BudgetAsset = "usd" | "credit";
 export type SubjectKind = "event" | "offer" | "resource" | (string & {});
 
-/** `partner_program` is one CHANNEL per (distribution × program × slot) — the
- *  partners it reaches are the promo links beneath it, not the channel itself.
+/** `program` is one CHANNEL per (distribution × program × slot) — the
+ *  entities it reaches are the promo links beneath it, not the channel itself.
  *  `owned` / `paid` are the first-party and ad-account channels. */
-export type DeploymentMode = "owned" | "partner_program" | "paid";
+export type DeploymentMode = "owned" | "program" | "paid";
 export type DeploymentMedium =
   | "social"
   | "email"
@@ -217,11 +217,11 @@ export type BoominEventType =
   | "deployment.cancel_requested"
   | "deployment.canceled"
   | "deployment.cleanup_failed"
-  | "partnership.created"
-  | "partnership.activated"
-  | "partnership.paused"
-  | "partnership.resumed"
-  | "partnership.ended"
+  | "relationship.created"
+  | "relationship.activated"
+  | "relationship.paused"
+  | "relationship.resumed"
+  | "relationship.ended"
   | "enrollment.created"
   | "enrollment.approved"
   | "enrollment.rejected"
@@ -310,8 +310,8 @@ export interface ProgramHandoffConfig {
 
 /** Canonical since RELATIONSHIP_CORE: WHO you have relationships with. */
 export interface Entity extends BaseObject {
-  /** `entity` canonically; `partner` on payloads stored before the flip. */
-  object?: "entity" | "partner";
+  /** `entity` canonically; `entity` on payloads stored before the flip. */
+  object?: "entity" | "entity";
   kind?: string;
   name?: string | null;
   email?: string | null;
@@ -319,15 +319,15 @@ export interface Entity extends BaseObject {
 }
 
 /** @deprecated RELATIONSHIP_CORE naming: use {@link Entity}. Alias forever. */
-export type Partner = Entity;
+export type Entity = Entity;
 
 /** Canonical since RELATIONSHIP_CORE: the durable pair-level bond. */
 export interface Relationship extends BaseObject {
-  /** `relationship` canonically; `partnership` on stored payloads. */
-  object?: "relationship" | "partnership";
+  /** `relationship` canonically; `relationship` on stored payloads. */
+  object?: "relationship" | "relationship";
   /** `ent_…` id, or an inlined `{id, name, email}` on list/retrieve. */
-  partner?: string | { id: string; name: string | null; email: string | null };
-  status: PartnershipStatus;
+  entity?: string | { id: string; name: string | null; email: string | null };
+  status: RelationshipStatus;
   /** Customer-extensible terms — keys inside are NEVER rewritten. */
   rights?: Record<string, unknown> | null;
   permissions?: Record<string, unknown> | null;
@@ -338,12 +338,12 @@ export interface Relationship extends BaseObject {
 }
 
 /** @deprecated RELATIONSHIP_CORE naming: use {@link Relationship}. Alias forever. */
-export type Partnership = Relationship;
+export type Relationship = Relationship;
 
 /**
  * What `relationships.pause` / `relationships.resume` resolve to: the
  * relationship itself plus what the verb actually touched. Under program-grain
- * deployments a relationship pause can only move THIS partner's instruments,
+ * deployments a relationship pause can only move THIS entity's instruments,
  * so the counts are LINK codes — `deploymentsPaused` / `deploymentsResumed` /
  * `deploymentsSkipped` are gone, because they named an action these verbs must
  * not take.
@@ -358,7 +358,7 @@ export interface RelationshipLifecycleResult extends Relationship {
 }
 
 /** @deprecated Use {@link RelationshipLifecycleResult}. Alias forever. */
-export type PartnershipLifecycleResult = RelationshipLifecycleResult;
+export type RelationshipLifecycleResult = RelationshipLifecycleResult;
 
 /** One immutable assertion EVENT (RELATIONSHIP_CORE §4) — tenant truth. */
 export interface Assertion extends BaseObject {
@@ -408,7 +408,7 @@ export interface RequirementOverride extends BaseObject {
 export interface StandingResult {
   object?: "program.standing_result";
   enrollment: string;
-  partner?: string;
+  entity?: string;
   /** The WOULD-BE status under the (possibly simulated) context. */
   status: string;
   /** What the ledger currently says. */
@@ -434,10 +434,10 @@ export interface StandingPreview {
 
 export interface Enrollment extends BaseObject {
   object?: "enrollment";
-  /** `prog_…` / `pship_…` / `ptnr_…` references — flat, not `*_id` fields. */
+  /** `prog_…` / `rel_…` / `ent_…` references — flat, not `*_id` fields. */
   program: string;
-  partnership: string;
-  partner?: string;
+  relationship: string;
+  entity?: string;
   /** The brand's decision — never touched by pause/resume/archive. */
   approvalStatus: EnrollmentApprovalStatus;
   /** Participation lifecycle — never touched by approve/reject. */
@@ -520,8 +520,8 @@ export interface Deployment extends BaseObject {
    * `prog_…` / `conn_…` references — flat, not `*_id` fields.
    *
    * A deployment is a CHANNEL OF EXECUTION, so it names the PROGRAM it runs
-   * for and never a person: `partnership` and `enrollment` are gone from this
-   * object because the answer is now "all of them, via the links". Per-partner
+   * for and never a person: `relationship` and `enrollment` are gone from this
+   * object because the answer is now "all of them, via the links". Per-entity
    * attribution reads off `PerformanceEvent.enrollment`.
    */
   program?: string | null;
@@ -542,8 +542,8 @@ export interface Connection extends BaseObject {
   kind: ConnectionKind;
   provider: string;
   providerAccountId?: string | null;
-  /** Owner is a partner XOR a brand — one discriminated field, not two ids. */
-  owner?: { type: "partner" | "brand"; id: string };
+  /** Owner is a entity XOR a brand — one discriminated field, not two ids. */
+  owner?: { type: "entity" | "brand"; id: string };
   status?: string;
   scopes?: string[] | null;
   connectedAt?: string | null;
@@ -556,7 +556,7 @@ export interface PerformanceEvent extends BaseObject {
   deployment: string;
   distribution: string;
   /**
-   * `enr_…` — WHICH PARTNER earned it. The event carries its own attribution
+   * `enr_…` — WHICH ENTITY earned it. The event carries its own attribution
    * because the channel no longer does; `null` for genuinely unattributed
    * first-party measurement (owned/paid).
    */
@@ -652,7 +652,7 @@ export interface Payout extends BaseObject {
   periodEnd?: string;
   sourceKind?: "rule" | "collaborator";
   ruleId?: string | null;
-  recipient?: { kind: "user" | "partner"; id: string | null; name: string | null; email: string | null };
+  recipient?: { kind: "user" | "entity"; id: string | null; name: string | null; email: string | null };
   basisKind?: string | null;
   basisCents?: number | null;
   basisMetricKey?: string | null;
@@ -779,7 +779,7 @@ export type PayoutRuleScope =
   | { type: "member"; program: string; member: string };
 
 /**
- * How a partner EARNS. Economics are IMMUTABLE after creation — see
+ * How a entity EARNS. Economics are IMMUTABLE after creation — see
  * `PayoutRulesClient.update`.
  */
 export interface PayoutRule extends BaseObject {
@@ -862,8 +862,8 @@ export interface PayoutConnectStatus {
   rails: PayoutConnectStatusRail[];
   stripe: {
     configured: boolean;
-    partnerAccounts: number;
-    partnerAccountsPayoutsEnabled: number;
+    entityAccounts: number;
+    entityAccountsPayoutsEnabled: number;
   };
   [key: string]: unknown;
 }
@@ -934,16 +934,16 @@ export interface EntitiesClient {
 }
 
 /** @deprecated Use {@link EntitiesClient} (`boomin.entities`). Alias forever. */
-export type PartnersClient = EntitiesClient;
+export type EntitiesClient = EntitiesClient;
 
 export interface RelationshipsClient {
   retrieve(id: string, options?: RequestOptions): Promise<Relationship>;
   list(
-    params?: Params<PaginationParams & { status?: PartnershipStatus }>,
+    params?: Params<PaginationParams & { status?: RelationshipStatus }>,
     options?: RequestOptions,
   ): ListPromise<Relationship>;
   /**
-   * Pausing a RELATIONSHIP acts on this partner's own INSTRUMENTS, never on
+   * Pausing a RELATIONSHIP acts on this entity's own INSTRUMENTS, never on
    * the shared channels they sit on — so the verb reports the link codes it
    * paused plus the channels those links live on, for context.
    */
@@ -960,7 +960,7 @@ export interface RelationshipsClient {
 }
 
 /** @deprecated Use {@link RelationshipsClient} (`boomin.relationships`). Alias forever. */
-export type PartnershipsClient = RelationshipsClient;
+export type RelationshipsClient = RelationshipsClient;
 
 /** The claim subject: `entity` OR `externalUserId`+`issuer` (the pair a
  *  signed handoff binds). */
@@ -1027,10 +1027,10 @@ export interface EnrollmentOverridesClient {
 export interface EnrollmentCreateParams {
   /** The Program this enrollment participates in (flat client — payload carries program). */
   program: string;
-  /** Identify the invitee by `ptnr_…` id OR by email — one of the two is required. */
-  partner?: string;
+  /** Identify the invitee by `ent_…` id OR by email — one of the two is required. */
+  entity?: string;
   email?: string;
-  /** Display name, used when the email creates a new partner. */
+  /** Display name, used when the email creates a new entity. */
   name?: string;
   referralCode?: string;
   metadata?: Metadata;
@@ -1109,9 +1109,9 @@ export interface DeploymentsClient {
   retrieve(id: string, options?: RequestOptions): Promise<Deployment>;
   /**
    * `status` is the DESIRED status (the field you control), never the observed
-   * one. `partnership` is GONE as a filter — a channel names no partner, so it
-   * would have answered every query with an empty page; "this partner's
-   * channels" is `program` plus the partner's own enrollment.
+   * one. `relationship` is GONE as a filter — a channel names no entity, so it
+   * would have answered every query with an empty page; "this entity's
+   * channels" is `program` plus the entity's own enrollment.
    */
   list(
     params?: Params<
@@ -1144,7 +1144,7 @@ export interface PerformanceEventCreateParams {
   /** `dep_…` id. Required. */
   deployment: string;
   /**
-   * `enr_…` — WHICH PARTNER earned it. Optional, and the only way a direct
+   * `enr_…` — WHICH ENTITY earned it. Optional, and the only way a direct
    * create can attribute: the `?ref=` link paths stamp this themselves, but a
    * first-party integration measuring its own conversions has no other channel
    * to say who earned one. Omit it for unattributed measurement.
@@ -1373,7 +1373,7 @@ export interface PayoutBatchesClient {
 
 export interface PayoutsClient {
   list(
-    params?: Params<PaginationParams & { status?: string; partner?: string; periodStart?: string; periodEnd?: string }>,
+    params?: Params<PaginationParams & { status?: string; entity?: string; periodStart?: string; periodEnd?: string }>,
     options?: RequestOptions,
   ): ListPromise<Payout>;
   /**
@@ -1396,7 +1396,7 @@ export interface PayoutsClient {
   ): Promise<PayoutExportAccepted>;
   /** Disbursement readiness. Rail entries carry NO `config`. */
   connectStatus(params?: Params, options?: RequestOptions): Promise<PayoutConnectStatus>;
-  /** How a partner EARNS. */
+  /** How a entity EARNS. */
   rules: PayoutRulesClient;
   /** How money physically LEAVES. */
   rails: PayoutRailsClient;
@@ -1429,9 +1429,9 @@ export declare class Boomin {
   readonly operatingTypes: OperatingTypesClient;
   readonly metricKeys: MetricKeysClient;
   /** @deprecated Use `boomin.entities` — delegates to the canonical client. */
-  readonly partners: EntitiesClient;
+  readonly entities: EntitiesClient;
   /** @deprecated Use `boomin.relationships` — delegates to the canonical client. */
-  readonly partnerships: RelationshipsClient;
+  readonly relationships: RelationshipsClient;
   readonly enrollments: EnrollmentsClient;
   readonly distributions: DistributionsClient;
   readonly deployments: DeploymentsClient;

@@ -43,7 +43,7 @@ export class APIError extends BoominError {}
  */
 export class OperationConflictError extends ConflictError {}
 
-/** Distinctly surfaced typed code: the billing band's partner limit is hit. */
+/** Distinctly surfaced typed code: the billing band's entity limit is hit. */
 export class BandLimitReachedError extends InvalidRequestError {}
 
 /** Distinctly surfaced typed code: a funded action is waiting on wallet funds. */

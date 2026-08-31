@@ -50,7 +50,7 @@ test("camelCaseResponse converts keys recursively, never values", () => {
     observed_status: "live",
     budget_allocation_minor: 500,
     capabilities: { editable_fields: ["a_b"], actions: { pause: true } },
-    owner: { type: "partner", id: "ptnr_1" },
+    owner: { type: "entity", id: "ent_1" },
     nested_list: [{ created_at: "t", inner: { deep_key: 1 } }],
   });
   assert.deepEqual(out, {
@@ -59,7 +59,7 @@ test("camelCaseResponse converts keys recursively, never values", () => {
     budgetAllocationMinor: 500,
     // Values are untouched: "a_b" stays "a_b" because it is a VALUE.
     capabilities: { editableFields: ["a_b"], actions: { pause: true } },
-    owner: { type: "partner", id: "ptnr_1" },
+    owner: { type: "entity", id: "ent_1" },
     nestedList: [{ createdAt: "t", inner: { deepKey: 1 } }],
   });
 });
@@ -215,7 +215,7 @@ test("auto-pagination still follows the cursor now that has_more is hasMore", as
     { status: 200, body: { object: "list", data: [{ id: "c" }], has_more: false } },
   ]);
   const seen = [];
-  for await (const item of boomin.partners.list()) seen.push(item.id);
+  for await (const item of boomin.entities.list()) seen.push(item.id);
   assert.deepEqual(seen, ["a", "b", "c"]);
   assert.equal(calls.length, 2);
   assert.match(calls[1].url, /starting_after=b/);
@@ -307,7 +307,7 @@ test("rawResponses still auto-paginates and still unwraps the endpoint envelope"
     { rawResponses: true },
   );
   const seen = [];
-  for await (const item of boomin.partners.list()) seen.push(item.id);
+  for await (const item of boomin.entities.list()) seen.push(item.id);
   assert.deepEqual(seen, ["a", "b"]);
   assert.equal(calls.length, 2);
 

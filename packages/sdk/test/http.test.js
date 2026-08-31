@@ -32,16 +32,16 @@ test("baseUrl override + trailing slash normalization", async () => {
 
 test("Boomin-Brand threads from constructor and per-call override wins", async () => {
   const { boomin, calls } = createClient([{ status: 200, body: {} }], { brand: "brand_ctor" });
-  await boomin.partners.list();
+  await boomin.entities.list();
   assert.equal(lastCall(calls).headers["Boomin-Brand"], "brand_ctor");
 
-  await boomin.partnerships.pause("ptn_1", {}, { brand: "brand_override" });
+  await boomin.relationships.pause("ptn_1", {}, { brand: "brand_override" });
   assert.equal(lastCall(calls).headers["Boomin-Brand"], "brand_override");
 });
 
 test("no Boomin-Brand header when brand is unset", async () => {
   const { boomin, calls } = createClient([{ status: 200, body: {} }]);
-  await boomin.partners.list();
+  await boomin.entities.list();
   assert.equal("Boomin-Brand" in lastCall(calls).headers, false);
 });
 
@@ -90,7 +90,7 @@ test("retries 429 and surfaces RateLimitError when exhausted", async () => {
     [{ status: 429, body: { error: { code: "rate_limited", message: "slow down" } }, headers: { "retry-after": "0" } }],
     { maxRetries: 1 },
   );
-  await assert.rejects(boomin.partners.list(), RateLimitError);
+  await assert.rejects(boomin.entities.list(), RateLimitError);
   assert.equal(calls.length, 2);
 });
 
@@ -119,13 +119,13 @@ test("does NOT retry 4xx", async () => {
 
 test("maxRetries: 0 disables retries entirely", async () => {
   const { boomin, calls } = createClient([{ status: 500, body: {} }], { maxRetries: 0 });
-  await assert.rejects(boomin.partners.list(), APIError);
+  await assert.rejects(boomin.entities.list(), APIError);
   assert.equal(calls.length, 1);
 });
 
 test("per-call maxRetries overrides the client default", async () => {
   const { boomin, calls } = createClient([{ status: 500, body: {} }], { maxRetries: 3 });
-  await assert.rejects(boomin.partners.list(undefined, { maxRetries: 0 }), APIError);
+  await assert.rejects(boomin.entities.list(undefined, { maxRetries: 0 }), APIError);
   assert.equal(calls.length, 1);
 });
 
@@ -148,7 +148,7 @@ test("timeout aborts and surfaces request_timeout", async () => {
       );
     });
   const boomin = new Boomin("sk_test_abc123", { fetch: neverFetch, timeout: 20, maxRetries: 0 });
-  const err = await boomin.partners.list().catch((e) => e);
+  const err = await boomin.entities.list().catch((e) => e);
   assert.ok(err instanceof APIError);
   assert.equal(err.code, "request_timeout");
 });

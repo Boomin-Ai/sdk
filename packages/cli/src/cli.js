@@ -109,10 +109,10 @@ const PLATFORM_V1_SCOPES = [
   { scope: "enrollments:read", category: "platform_v1", description: "Read program enrollments." },
   { scope: "enrollments:write", category: "platform_v1", description: "Invite, approve, reject, pause, or resume enrollments." },
   // Canonical relationship-stack scopes (RELATIONSHIP_CORE). The legacy
-  // `partnerships:*` spellings stay mintable and honored forever via aliases.
-  { scope: "relationships:read", category: "platform_v1", description: "Read durable relationships (canonical; alias of partnerships:read)." },
-  { scope: "relationships:write", category: "platform_v1", description: "Pause, resume, end, or update relationships (canonical; alias of partnerships:write)." },
-  { scope: "entities:read", category: "platform_v1", description: "Read entities (canonical; alias of partners:read)." },
+  // `relationships:*` spellings stay mintable and honored forever via aliases.
+  { scope: "relationships:read", category: "platform_v1", description: "Read durable relationships (canonical; alias of relationships:read)." },
+  { scope: "relationships:write", category: "platform_v1", description: "Pause, resume, end, or update relationships (canonical; alias of relationships:write)." },
+  { scope: "entities:read", category: "platform_v1", description: "Read entities (canonical; alias of entities:read)." },
   { scope: "assertions:read", category: "platform_v1", description: "Read tenant assertion claims and events." },
   { scope: "assertions:write", category: "platform_v1", description: "Assert and revoke tenant truth (claim-addressed)." },
   { scope: "operating_types:read", category: "platform_v1", description: "Read the brand's operating-capacity vocabulary." },
@@ -121,8 +121,8 @@ const PLATFORM_V1_SCOPES = [
   { scope: "metric_keys:write", category: "platform_v1", description: "Register, update, archive, or reactivate tenant x: metric keys." },
   { scope: "requirement_overrides:read", category: "platform_v1", description: "Read per-enrollment requirement overrides." },
   { scope: "requirement_overrides:write", category: "platform_v1", description: "Patch, add, disable, or clear per-enrollment requirement overrides." },
-  { scope: "partnerships:read", category: "platform_v1", description: "Read durable partnerships (legacy spelling of relationships:read)." },
-  { scope: "partnerships:write", category: "platform_v1", description: "Pause, resume, end, or update partnerships (legacy spelling of relationships:write)." },
+  { scope: "relationships:read", category: "platform_v1", description: "Read durable relationships (legacy spelling of relationships:read)." },
+  { scope: "relationships:write", category: "platform_v1", description: "Pause, resume, end, or update relationships (legacy spelling of relationships:write)." },
   { scope: "connections:read", category: "platform_v1", description: "Read provider connections and grants." },
   { scope: "connections:write", category: "platform_v1", description: "Revoke provider connections." },
   { scope: "performance:read", category: "platform_v1", description: "Read performance summaries." },
@@ -134,11 +134,11 @@ const PLATFORM_V1_SCOPES = [
   // column mapping decides which field of a payout row lands in the recipient
   // column of a file a bank ingests. `payouts:write` moves money the brand
   // already owes; it must not also redirect where that money lands.
-  { scope: "payout_rules:read", category: "platform_v1", description: "Read payout rules (how a partner earns)." },
+  { scope: "payout_rules:read", category: "platform_v1", description: "Read payout rules (how a entity earns)." },
   { scope: "payout_rules:write", category: "platform_v1", description: "Create, update, or archive payout rules." },
   { scope: "payout_rails:read", category: "platform_v1", description: "Read payout rails and their delivery config." },
   { scope: "payout_rails:write", category: "platform_v1", description: "Configure payout rails (where money physically lands)." },
-  { scope: "partners:read", category: "platform_v1", description: "Read partner identities." },
+  { scope: "entities:read", category: "platform_v1", description: "Read entity identities." },
   { scope: "handoff:read", category: "platform_v1", description: "Read program handoff configs (v1 tree)." },
 ];
 
@@ -213,7 +213,7 @@ function parseArgs(argv) {
       "budgetAsset",
       "budgetTotal",
       "email",
-      "partner",
+      "entity",
       "referralCode",
       "program",
       "status",
@@ -618,7 +618,7 @@ Flags:
 Usage:
   npx @boomin/cli referral init --framework next --auth custom
 
-This generates a signed handoff join route, current-user partner standing API, referral redirect tracker, and a starter partner page.
+This generates a signed handoff join route, current-user entity standing API, referral redirect tracker, and a starter entity page.
 `);
     return;
   }
@@ -692,7 +692,7 @@ Create flags:
 The program is the container everything else scopes to: enrollments invite
 INTO a program, distributions draw eligible enrollments FROM programs, and
 payout rules scope BY program. Create one first, then:
-  npx @boomin/cli enrollment invite --program prog_... --email partner@example.com
+  npx @boomin/cli enrollment invite --program prog_... --email entity@example.com
   npx @boomin/cli distribution create --name "Launch" --programs prog_...
 
 Auth: --token sk_boomin_live_... or BOOMIN_PLATFORM_TOKEN
@@ -735,30 +735,30 @@ Auth: --token sk_boomin_live_... or BOOMIN_PLATFORM_TOKEN (needs distributions:*
     console.log(`Boomin CLI - enrollments (Platform v1, program-scoped)
 
 Usage:
-  npx @boomin/cli enrollment invite --program prog_... --email partner@example.com [--name "Ada"]
-  npx @boomin/cli enrollment invite --program prog_... --partner ptnr_...
+  npx @boomin/cli enrollment invite --program prog_... --email entity@example.com [--name "Ada"]
+  npx @boomin/cli enrollment invite --program prog_... --entity ent_...
   npx @boomin/cli enrollment approve <enr_id>
   npx @boomin/cli enrollment reject <enr_id>
   npx @boomin/cli enrollment list [--program prog_...] [--status active|paused|archived] [--approval-status pending|approved|rejected]
   npx @boomin/cli enrollment get <enr_id>
 
 Invite creates the enrollment (payload carries the program) and the durable
-partnership when none exists. Approve/reject only move approval_status;
+relationship when none exists. Approve/reject only move approval_status;
 rejection is not terminal (re-invite resets it to pending).
 `);
     return;
   }
-  if (first === "partnership") {
-    console.log(`Boomin CLI - partnerships (Platform v1)
+  if (first === "relationship") {
+    console.log(`Boomin CLI - relationships (Platform v1)
 
 Usage:
-  npx @boomin/cli partnership list [--status pending|active|paused|ended]
-  npx @boomin/cli partnership get <pship_id>
-  npx @boomin/cli partnership pause <pship_id>
-  npx @boomin/cli partnership resume <pship_id>
-  npx @boomin/cli partnership end <pship_id>
+  npx @boomin/cli relationship list [--status pending|active|paused|ended]
+  npx @boomin/cli relationship get <rel_id>
+  npx @boomin/cli relationship pause <rel_id>
+  npx @boomin/cli relationship resume <rel_id>
+  npx @boomin/cli relationship end <rel_id>
 
-Pause stops this partner's own links on the channels they run on — it never
+Pause stops this entity's own links on the channels they run on — it never
 pauses a shared channel. Enrollments and links are preserved (attribution
 continues). End is the explicit terminal verb.
 `);
@@ -783,7 +783,7 @@ Usage:
   npx @boomin/cli payout export [--out payouts.csv] [--period-start YYYY-MM-DD --period-end YYYY-MM-DD] [--no-wait]
   npx @boomin/cli payout connect
 
-Configuration — how a partner EARNS (scope: payout_rules:read|write):
+Configuration — how a entity EARNS (scope: payout_rules:read|write):
   npx @boomin/cli payout rules list [--program prog_...] [--status active|paused|archived] [--type revenue_split|cpa|threshold_bonus]
   npx @boomin/cli payout rules create --name "Rev share" --type revenue_split --program prog_... --rate-bps 2000
   npx @boomin/cli payout rules create --name "Registration CPA" --type cpa --program prog_... --metric-key event_registration --per-unit-minor 500
@@ -872,7 +872,7 @@ Platform v1 (distribution infrastructure — see \`help <group>\`):
   npx @boomin/cli program create|list|get|update
   npx @boomin/cli distribution create|list|get|validate|launch|pause|resume|cancel
   npx @boomin/cli enrollment invite|approve|reject|list|get|set-type|overrides
-  npx @boomin/cli relationship list|get|pause|resume|end   (alias: partnership)
+  npx @boomin/cli relationship list|get|pause|resume|end   (alias: relationship)
   npx @boomin/cli assertion assert|revoke|list
   npx @boomin/cli operating-type create|list|get|update|archive
   npx @boomin/cli metric register|list|get|update|archive
@@ -1181,7 +1181,7 @@ async function selectProgram(apiBase, token, org, brand, flags, rl) {
     if (choice.type === "existing") return ensureProgramListing(apiBase, token, choice.program, flags);
   }
 
-  const defaultName = `${brand.name || org.name || "Boomin"} Partner Program`;
+  const defaultName = `${brand.name || org.name || "Boomin"} Entity Program`;
   const programName = isInteractive(flags) ? (await rl.question(`Program name (${defaultName}): `)).trim() || defaultName : defaultName;
   const created = await request(apiBase, `/brands/${encodeURIComponent(brand.id)}/programs`, {
     method: "POST",
@@ -1811,10 +1811,10 @@ async function doctor(flags = {}) {
       const stripeConfigured = Boolean(connect.data.stripe?.configured);
       if (rails.length > 0 || stripeConfigured) {
         doctorCheck(checks, "pass", "billing_readiness", "Wallet/billing readiness", `Disbursement ready: ${rails.length} payout rail(s)${stripeConfigured ? ", Stripe configured" : ""}.`, {
-          details: { rails: rails.length, stripeConfigured, partnerAccounts: connect.data.stripe?.partner_accounts },
+          details: { rails: rails.length, stripeConfigured, entityAccounts: connect.data.stripe?.entity_accounts },
         });
       } else {
-        doctorCheck(checks, "warn", "billing_readiness", "Wallet/billing readiness", "No payout rails configured and Stripe is not configured; partner payouts cannot disburse.", {
+        doctorCheck(checks, "warn", "billing_readiness", "Wallet/billing readiness", "No payout rails configured and Stripe is not configured; entity payouts cannot disburse.", {
           fix: "Configure a payout rail (csv_batch or stripe_connect) in the Boomin console, or run `npx @boomin/cli payout connect` to inspect.",
         });
       }
@@ -2822,7 +2822,7 @@ ${auth === "custom" ? "" : "\n"}${nextReferralAuthSnippet(auth)}
 export const GET = createBoominCreatorJoinHandler({
   publicKey: process.env.BOOMIN_CONNECT_PUBLIC_KEY,
   programId: process.env.BOOMIN_CONNECT_PROGRAM_ID,
-  redirectUri: process.env.BOOMIN_CONNECT_REDIRECT_URI || new URL("/partner", process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").toString(),
+  redirectUri: process.env.BOOMIN_CONNECT_REDIRECT_URI || new URL("/entity", process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").toString(),
   signingSecret: process.env.BOOMIN_HANDOFF_SIGNING_SECRET,
   issuer: process.env.BOOMIN_HANDOFF_ISSUER || "your-app.com",
   loginUrl: "/login",
@@ -2832,7 +2832,7 @@ export const GET = createBoominCreatorJoinHandler({
 }
 
 function nextReferralStatusRouteTemplate(auth) {
-  return `import { getPartnerStanding } from "@boomin/server";
+  return `import { getStanding } from "@boomin/server";
 ${auth === "custom" ? "" : "\n"}${nextReferralAuthSnippet(auth)}
 
 export async function GET(request) {
@@ -2841,7 +2841,7 @@ export async function GET(request) {
     return Response.json({ success: false, code: "unauthorized", message: "Sign in required." }, { status: 401 });
   }
 
-  const standing = await getPartnerStanding({
+  const standing = await getStanding({
     publicKey: process.env.BOOMIN_CONNECT_PUBLIC_KEY,
     programId: process.env.BOOMIN_CONNECT_PROGRAM_ID,
     issuer: process.env.BOOMIN_HANDOFF_ISSUER || "your-app.com",
@@ -2851,7 +2851,7 @@ export async function GET(request) {
 
   return Response.json({
     success: true,
-    partner: standing.partners?.[0] || null,
+    entity: standing.entities?.[0] || null,
     totals: standing.totals,
     requiredChannels: standing.requiredChannels || [],
   });
@@ -2871,7 +2871,7 @@ export async function GET(request, { params }) {
       programId: process.env.BOOMIN_CONNECT_PROGRAM_ID,
       issuer: process.env.BOOMIN_HANDOFF_ISSUER || "your-app.com",
       signingSecret: process.env.BOOMIN_HANDOFF_SIGNING_SECRET,
-      partnerRef: code,
+      entityRef: code,
       eventId: \`link_click:\${code}:\${crypto.randomUUID()}\`,
       metadata: {
         sourceUrl: request.url,
@@ -2895,9 +2895,9 @@ function nextReferralPageTemplate() {
 
 import { useEffect, useMemo, useState } from "react";
 
-export default function PartnerPage() {
+export default function EntityPage() {
   const [state, setState] = useState("loading");
-  const [partner, setPartner] = useState(null);
+  const [entity, setEntity] = useState(null);
   const [error, setError] = useState(null);
 
   async function load() {
@@ -2906,11 +2906,11 @@ export default function PartnerPage() {
     try {
       const response = await fetch("/api/boomin/partner/status", { credentials: "include" });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || "Could not load partner status.");
-      setPartner(data.partner);
+      if (!response.ok) throw new Error(data.message || "Could not load entity status.");
+      setEntity(data.entity);
       setState("ready");
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Could not load partner status.");
+      setError(loadError instanceof Error ? loadError.message : "Could not load entity status.");
       setState("error");
     }
   }
@@ -2919,30 +2919,30 @@ export default function PartnerPage() {
     void load();
   }, []);
 
-  const referral = partner?.referral || {
-    code: partner?.referralCode,
-    url: partner?.referralLink,
-    active: Boolean(partner?.referralLink),
+  const referral = entity?.referral || {
+    code: entity?.referralCode,
+    url: entity?.referralLink,
+    active: Boolean(entity?.referralLink),
   };
-  const metrics = partner?.metrics || {};
-  const needsInstagram = Array.isArray(partner?.missingChannels) && partner.missingChannels.includes("instagram");
+  const metrics = entity?.metrics || {};
+  const needsInstagram = Array.isArray(entity?.missingChannels) && entity.missingChannels.includes("instagram");
 
   return (
     <main style={{ minHeight: "100vh", padding: 32, fontFamily: "Inter, system-ui, sans-serif", background: "#071019", color: "#f8fafc" }}>
       <section style={{ maxWidth: 880, margin: "0 auto" }}>
-        <p style={{ color: "#22d3ee", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Partner Program</p>
-        <h1 style={{ marginTop: 8, fontSize: 40, lineHeight: 1.05 }}>Your referral link and partner standing</h1>
+        <p style={{ color: "#22d3ee", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Entity Program</p>
+        <h1 style={{ marginTop: 8, fontSize: 40, lineHeight: 1.05 }}>Your referral link and entity standing</h1>
         <p style={{ marginTop: 12, color: "#94a3b8", maxWidth: 640 }}>
           Share your link, track your progress, and connect optional channels when the program asks for them.
         </p>
 
         {state === "error" && <StatusBox tone="error">{error}</StatusBox>}
 
-        {!partner && state !== "loading" ? (
+        {!entity && state !== "loading" ? (
           <a href="/api/boomin/partner/join" style={buttonStyle}>Join partner program</a>
         ) : null}
 
-        {partner ? (
+        {entity ? (
           <>
             <div style={{ marginTop: 24, padding: 20, border: "1px solid rgba(34,211,238,.2)", borderRadius: 12, background: "rgba(15,23,42,.75)" }}>
               <p style={{ margin: 0, color: "#94a3b8", fontSize: 13 }}>Referral link</p>
@@ -2962,9 +2962,9 @@ export default function PartnerPage() {
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginTop: 16 }}>
-              <StatusBox>Approval: {partner.approvalStatus || partner.member?.approvalStatus || "pending"}</StatusBox>
-              <StatusBox>Qualification: {partner.qualificationStatus || partner.qualification?.status || "pending"}</StatusBox>
-              <StatusBox>Program status: {partner.status || "joined"}</StatusBox>
+              <StatusBox>Approval: {entity.approvalStatus || entity.member?.approvalStatus || "pending"}</StatusBox>
+              <StatusBox>Qualification: {entity.qualificationStatus || entity.qualification?.status || "pending"}</StatusBox>
+              <StatusBox>Program status: {entity.status || "joined"}</StatusBox>
             </div>
 
             {needsInstagram ? (
@@ -2972,7 +2972,7 @@ export default function PartnerPage() {
             ) : null}
           </>
         ) : state === "loading" ? (
-          <StatusBox>Loading partner standing...</StatusBox>
+          <StatusBox>Loading entity standing...</StatusBox>
         ) : null}
       </section>
     </main>

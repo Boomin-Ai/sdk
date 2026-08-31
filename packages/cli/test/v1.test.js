@@ -79,7 +79,7 @@ test("distributionCreateParams prefers --budget JSON and requires --name", () =>
 
 test("enrollmentInviteParams requires program and a target identity", () => {
   assert.throws(() => enrollmentInviteParams(flags({})), /--program is required/);
-  assert.throws(() => enrollmentInviteParams(flags({ program: "prog_x" })), /--email or --partner/);
+  assert.throws(() => enrollmentInviteParams(flags({ program: "prog_x" })), /--email or --entity/);
   // One vocabulary: the CLI hands the SDK camelCase and the SDK converts.
   assert.deepEqual(
     enrollmentInviteParams(flags({ program: "prog_x", email: "a@b.co", referralCode: "ada10" })),
@@ -119,7 +119,7 @@ test("distributionSummary renders rollup + budget lines", () => {
 // ── Dispatch + wire behavior over a mocked transport ──────────────────────────
 
 test("isV1Group knows the eight groups", () => {
-  for (const group of ["program", "distribution", "enrollment", "partnership", "connection", "payout", "webhook", "events"]) {
+  for (const group of ["program", "distribution", "enrollment", "relationship", "connection", "payout", "webhook", "events"]) {
     assert.ok(isV1Group(group), group);
   }
   assert.ok(!isV1Group("token"));
@@ -183,7 +183,7 @@ test("distribution pause waits on the operation returned alongside the 202 body"
 
 test("enrollment invite → approve round-trip hits the flat enrollment routes", async () => {
   const fetchImpl = createMockFetch([
-    { status: 201, body: { id: "enr_1", program: "prog_a", partnership: "pship_1", approval_status: "pending", status: "active" } },
+    { status: 201, body: { id: "enr_1", program: "prog_a", relationship: "rel_1", approval_status: "pending", status: "active" } },
     { status: 200, body: { id: "enr_1", approval_status: "approved", status: "active" } },
   ]);
   const log = createLogCapture();

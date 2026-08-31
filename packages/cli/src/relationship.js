@@ -1,6 +1,6 @@
 /**
  * Relationship-stack command groups (RELATIONSHIP_CORE §2/§4/§5, CLI 0.7.0):
- * `relationship` (canonical; `partnership` stays an alias forever),
+ * `relationship` (canonical; `relationship` stays an alias forever),
  * `assertion`, `operating-type`, `metric`, `standing test`, and the
  * enrollment extensions (`set-type`, `overrides …`).
  *
@@ -19,12 +19,12 @@ import {
   requireId,
 } from "./v1.js";
 
-// ── relationship (alias: partnership) ─────────────────────────────────────────
+// ── relationship (alias: relationship) ─────────────────────────────────────────
 
 const RELATIONSHIP_COLUMNS = [
   { header: "ID", value: (p) => p.id },
   { header: "STATUS", value: (p) => p.status },
-  { header: "PARTNER", value: (p) => (typeof p.partner === "object" ? (p.partner?.name ?? p.partner?.email ?? p.partner?.id ?? "") : p.partner ?? "") },
+  { header: "ENTITY", value: (p) => (typeof p.entity === "object" ? (p.entity?.name ?? p.entity?.email ?? p.entity?.id ?? "") : p.entity ?? "") },
   { header: "STARTED", value: (p) => p.startedAt ?? "" },
 ];
 
@@ -44,7 +44,7 @@ export async function relationshipCommand(subcommand, flags, ctx) {
     return log(formatObject(relationship, [
       ["Relationship", (p) => p.id],
       ["Status", (p) => p.status],
-      ["Partner", (p) => (typeof p.partner === "object" ? `${p.partner.name ?? p.partner.email ?? ""} (${p.partner.id})` : p.partner)],
+      ["Entity", (p) => (typeof p.entity === "object" ? `${p.entity.name ?? p.entity.email ?? ""} (${p.entity.id})` : p.entity)],
       ["Started", (p) => p.startedAt],
       ["Ended", (p) => p.endedAt],
     ]));
@@ -56,7 +56,7 @@ export async function relationshipCommand(subcommand, flags, ctx) {
     return log(formatObject(relationship, [
       ["Relationship", (p) => p.id],
       ["Status", (p) => p.status],
-      // A relationship pause moves this partner's own INSTRUMENTS, never the
+      // A relationship pause moves this entity's own INSTRUMENTS, never the
       // shared channels they sit on.
       ["Links paused", (p) => (p.linksPaused ? p.linksPaused.join(", ") || "(none)" : undefined)],
       ["Links resumed", (p) => (p.linksResumed ? p.linksResumed.join(", ") || "(none)" : undefined)],
@@ -332,7 +332,7 @@ export async function standingCommand(subcommand, flags, ctx) {
     log("");
     log(formatObject(result, [
       ["Enrollment", (r) => r.enrollment],
-      ["Partner", (r) => r.partner],
+      ["Entity", (r) => r.entity],
       ["Operating as", (r) => r.operatingType ?? "(untyped)"],
       ["Tier", (r) => (r.tier ? `${r.tier.name} (rank ${r.tier.rank})` : undefined)],
       ["Score", (r) => r.score],

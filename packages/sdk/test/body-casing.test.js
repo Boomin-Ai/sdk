@@ -116,7 +116,7 @@ test("declared conversion never reaches into spec/metadata/properties", () => {
   const perms = { canPost: true, nested: { alsoCamel: 1 } };
   const permsOut = snakeCaseBody(
     { permissions: perms, rights: { someRight: 1 }, compensationDefaults: { rateBps: 500 } },
-    "partnerships.updatePermissions",
+    "relationships.updatePermissions",
   );
   assert.deepEqual(permsOut.permissions, perms);
   assert.deepEqual(permsOut.rights, { someRight: 1 });
