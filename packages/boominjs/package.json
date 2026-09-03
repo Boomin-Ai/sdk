@@ -1,0 +1,35 @@
+{
+  "name": "boominjs",
+  "version": "1.0.0",
+  "description": "boominjs — Components by Boomin. Alias of @boomin/components: runtime-delivered UI (the org-admin console, and more) you mount inside your own product.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Boomin-Ai/sdk.git",
+    "directory": "packages/boominjs"
+  },
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js",
+      "default": "./src/index.js"
+    },
+    "./console": {
+      "types": "./src/console.d.ts",
+      "import": "./src/console.js",
+      "default": "./src/console.js"
+    }
+  },
+  "files": ["src", "README.md"],
+  "publishConfig": { "access": "public" },
+  "scripts": {
+    "build": "node --check src/index.js && node --check src/console.js",
+    "pack:dry": "npm pack --dry-run"
+  },
+  "dependencies": { "@boomin/components": "^0.1.0" },
+  "keywords": ["boomin", "boominjs", "components", "console", "embed"],
+  "author": "Boomin",
+  "license": "MIT"
+}
