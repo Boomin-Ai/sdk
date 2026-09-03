@@ -430,6 +430,15 @@ export class DeploymentsClient extends ResourceClient {
   }
 }
 
+/** Admin-console sessions: one-time handoff codes that sign a member of your
+ *  org into `@boomin/components/console` inside your own product. The email
+ *  must already be a member; the API never widens access. */
+export class ConsoleSessionsClient extends ResourceClient {
+  create(params, options) {
+    return this._http.post("/console_sessions", params ?? {}, options);
+  }
+}
+
 export class ConnectionsClient extends ResourceClient {
   retrieve(id, options) {
     return this._http.get(`/connections/${pathParam(id, "id")}`, undefined, options);
