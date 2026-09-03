@@ -1,0 +1,50 @@
+{
+  "name": "@boomin/components",
+  "version": "0.1.0",
+  "description": "Components by Boomin — runtime-delivered UI you mount inside your own product. `@boomin/components/console` is the org-admin Brand Settings console (Payments, Stripe, members, API keys).",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Boomin-Ai/sdk.git",
+    "directory": "packages/components"
+  },
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js",
+      "default": "./src/index.js"
+    },
+    "./console": {
+      "types": "./src/console.d.ts",
+      "import": "./src/console.js",
+      "default": "./src/console.js"
+    },
+    "./components.js": "./dist/components.js",
+    "./console.js": "./dist/console.js"
+  },
+  "files": [
+    "src",
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "pack:dry": "npm pack --dry-run"
+  },
+  "keywords": [
+    "boomin",
+    "components",
+    "console",
+    "admin",
+    "stripe-connect",
+    "payments",
+    "embed"
+  ],
+  "author": "Boomin",
+  "license": "MIT"
+}

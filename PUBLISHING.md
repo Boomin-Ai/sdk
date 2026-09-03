@@ -15,6 +15,7 @@ SDK ships a package that cannot install.
 2. @boomin/cli
 3. @boomin/connect  (independent)
 4. @boomin/server   (independent; deprecation, see below)
+5. @boomin/components (independent; its build FETCHES the bundles the web app serves at boomin.ai/components/v1* — deploy web first, or set BOOMIN_WEB_DIST=<web>/dist)
 ```
 
 ## The dist-tag decision (read before the first SDK publish)
@@ -45,6 +46,7 @@ an input so this stays a conscious choice.
 | `@boomin/cli` | 0.3.0 | 0.2.0 |
 | `@boomin/connect` | 0.2.0 | 0.2.0 (current) |
 | `@boomin/server` | 0.1.1 | 0.1.1 (current) |
+| `@boomin/components` | 0.1.0 | **not published** — first org-admin-scoped package (`@boomin/components/console`) |
 
 ## Steps
 

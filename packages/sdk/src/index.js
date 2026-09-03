@@ -36,6 +36,7 @@ import {
   OperationsClient,
   WebhooksClient,
   PayoutsClient,
+  ConsoleSessionsClient,
 } from "./resources.js";
 
 export class Boomin {
@@ -62,6 +63,7 @@ export class Boomin {
     this.distributions = new DistributionsClient(this._http);
     this.deployments = new DeploymentsClient(this._http);
     this.connections = new ConnectionsClient(this._http);
+    this.consoleSessions = new ConsoleSessionsClient(this._http);
     this.performance = new PerformanceClient(this._http);
     this.events = new EventsClient(this._http);
     this.operations = new OperationsClient(this._http);

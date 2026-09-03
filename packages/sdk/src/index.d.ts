@@ -1130,6 +1130,24 @@ export interface DeploymentsClient {
   cancel(id: string, params?: Params, options?: RequestOptions): Promise<Deployment & { operation: string }>;
 }
 
+export interface ConsoleSessionCreateParams {
+  /** Email of an existing member of your organization (or of the key's brand). */
+  email: string;
+}
+
+export interface ConsoleSession {
+  object: "console_session";
+  /** One-time code, valid 60 seconds. Pass it to mountConsole({ handoff }). */
+  code: string;
+  expiresAt: string;
+  brand: { id: string; slug: string; name: string };
+}
+
+/** One-time handoff codes that sign a member into `@boomin/components/console` inside your product. */
+export interface ConsoleSessionsClient {
+  create(params: ConsoleSessionCreateParams, options?: RequestOptions): Promise<ConsoleSession>;
+}
+
 export interface ConnectionsClient {
   retrieve(id: string, options?: RequestOptions): Promise<Connection>;
   list(params?: Params<PaginationParams>, options?: RequestOptions): ListPromise<Connection>;
@@ -1436,6 +1454,8 @@ export declare class Boomin {
   readonly distributions: DistributionsClient;
   readonly deployments: DeploymentsClient;
   readonly connections: ConnectionsClient;
+  /** One-time handoff codes for `@boomin/components/console` in your own product. */
+  readonly consoleSessions: ConsoleSessionsClient;
   readonly performance: PerformanceClient;
   readonly events: EventsClient;
   readonly operations: OperationsClient;
