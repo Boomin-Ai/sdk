@@ -1,6 +1,6 @@
 {
   "name": "@boomin/sdk",
-  "version": "1.0.0-beta.6",
+  "version": "1.0.0-beta.7",
   "description": "Boomin platform SDK — programmable distribution infrastructure (programs, relationships, enrollments, distributions, deployments, performance, payouts).",
   "type": "module",
   "repository": {

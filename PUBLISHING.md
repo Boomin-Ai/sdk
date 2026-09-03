@@ -15,7 +15,8 @@ SDK ships a package that cannot install.
 2. @boomin/cli
 3. @boomin/connect  (independent)
 4. @boomin/server   (independent; deprecation, see below)
-5. @boomin/components (independent; its build FETCHES the bundles the web app serves at boomin.ai/components/v1* — deploy web first, or set BOOMIN_WEB_DIST=<web>/dist)
+5. @boomin/components (independent;
+6. boominjs  ← AFTER @boomin/components (alias; depends on it via the registry) its build FETCHES the bundles the web app serves at boomin.ai/components/v1* — deploy web first, or set BOOMIN_WEB_DIST=<web>/dist)
 ```
 
 ## The dist-tag decision (read before the first SDK publish)
