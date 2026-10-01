@@ -31,10 +31,13 @@ jobs:
           cache-dependency-path: packages/cli/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --workspaces=false
 
       - name: Build
         run: npm run build
+
+      - name: Test
+        run: npm test --workspaces=false
 
       - name: Pack smoke
         run: npm pack --dry-run
