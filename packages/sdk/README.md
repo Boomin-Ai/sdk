@@ -7,11 +7,16 @@ partner program (whose enrolled entities each carry their own link on it), an
 owned channel, or paid media.
 
 Built on `fetch` + WebCrypto only: works on Node >= 18, Cloudflare Workers,
-Bun, Deno, browsers, and edge runtimes. Zero dependencies, zero Node builtins.
+Bun, Deno, browsers, and edge runtimes. No Node builtins or bundled database driver;
+the lead-tracking module uses `@boomin/server` for signed Connect requests.
 
 ```sh
 npm install @boomin/sdk
 ```
+
+For creator referral capture, durable signup attribution, and retried lead
+delivery on a brand's existing domain, see [Lead tracking](docs/lead-tracking.md).
+The CLI and MCP agent installer share the SDK's migration and route generator.
 
 ## Quickstart
 

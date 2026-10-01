@@ -23,11 +23,16 @@ jobs:
           cache: "npm"
 
       - name: Install
-        run: npm install
+        run: npm ci
 
       - name: Build
         run: npm run build
 
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
       - name: Pack dry run
         run: npm run pack:dry
-
