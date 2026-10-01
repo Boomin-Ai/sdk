@@ -8,6 +8,7 @@ import os from "node:os";
 import { ApiError } from "./errors.js";
 import { isV1Group, runV1Command } from "./v1.js";
 import { CLI_CLIENT_HEADER } from "./version.js";
+import { leadTrackingFiles } from "@boomin/sdk/leads/scaffold";
 
 const DEFAULT_APP_API_BASE = "https://api.boomin.ai/v1/app";
 const DEFAULT_PLATFORM_API_BASE = "https://api.boomin.ai/v1/platform";
@@ -190,6 +191,8 @@ function parseArgs(argv) {
       "joinRoute",
       "statusRoute",
       "redirectRoute",
+      "customerTable",
+      "customerIdColumn",
       "destinationUrl",
       "issuer",
       "audience",
@@ -593,14 +596,19 @@ Generated files:
   app/api/boomin/partner/status/route.js
   app/r/[code]/route.js
   app/partner/page.jsx
+  lib/boomin-{attribution,leads,lead-hooks}.js
+  app/api/boomin/leads/{signup,deliver}/route.js
+  boomin/lead-tracking.sql and boomin/LEAD_SETUP.md
 
 With --write it also wires the referral runtime:
   - writes BOOMIN_REFERRAL_DESTINATION_URL to .env.local (defaults to your app's primary origin)
   - sets program metadata referralBaseUrl to "<primary origin>/r" so referral
-    links use your app's /r route instead of the boomin.ai/r/ fallback
+    links use your app's /r route
     (an already-set referralBaseUrl is kept unless --origin is passed)
 
 Flags:
+  --customer-table <name> New-account table (optional schema.table) for the signup trigger.
+  --customer-id-column <c> Stable authenticated customer ID column; default id.
   --framework next        Generate Next.js App Router files.
   --auth custom           custom, clerk, or supabase.
   --write                 Write files instead of printing a preview.
@@ -1681,6 +1689,21 @@ async function doctor(flags = {}) {
     doctorCheck(checks, "pass", "referral_readiness", "Referral readiness", "Referral page, redirect route, handoff, and destination URL are configured.");
   }
 
+  const leadFiles = Object.keys(leadTrackingFiles());
+  const missingLeadFiles = [];
+  for (const file of leadFiles) {
+    if (!await fs.stat(path.join(process.cwd(), file)).catch(() => null)) missingLeadFiles.push(file);
+  }
+  const hooks = await fs.readFile(path.join(process.cwd(), "lib/boomin-lead-hooks.js"), "utf8").catch(() => "");
+  const needsHooks = hooks.includes("Wire boominLeadQuery") || hooks.includes("yourAuthGetCurrentUser");
+  const cronToken = envValue(envFile, "BOOMIN_LEAD_CRON_TOKEN");
+  doctorCheck(checks, "warn", "lead_tracking_readiness", "Lead tracking readiness",
+    missingLeadFiles.length ? `Missing lead files: ${missingLeadFiles.join(", ")}.` :
+      needsHooks ? "Generated lead hooks still need database/auth wiring." :
+      !cronToken ? "BOOMIN_LEAD_CRON_TOKEN is missing." :
+      "Lead files and hooks exist. Verify the applied migration, landing capture, OTP/OAuth capture, scheduled delivery and end-to-end signup credit; file checks cannot prove these.",
+    { fix: "Complete boomin/LEAD_SETUP.md and run an end-to-end signup/outage rehearsal." });
+
   const skillStatus = await getSkillInstallStatus();
   const missingSkillTargets = skillStatus.targets.filter((target) => !target.installed);
   if (missingSkillTargets.length === 0) {
@@ -2470,7 +2493,7 @@ async function configureReferralRuntime(flags = {}) {
   } catch (error) {
     summary.warnings.push(
       `Could not set program metadata referralBaseUrl (${error.message}). ` +
-      "Referral links will fall back to boomin.ai/r/ until it is set — re-run `npx @boomin/cli referral init --write` after `npx @boomin/cli login`.",
+      "Your app's referral route must be configured as referralBaseUrl — re-run `npx @boomin/cli referral init --write` after `npx @boomin/cli login`.",
     );
   }
   return summary;
@@ -2491,8 +2514,10 @@ async function referralCommand(subcommand, flags = {}) {
   const files = {
     [flags.joinRoute || "app/api/boomin/partner/join/route.js"]: nextReferralJoinRouteTemplate(auth),
     [flags.statusRoute || "app/api/boomin/partner/status/route.js"]: nextReferralStatusRouteTemplate(auth),
-    [flags.redirectRoute || "app/r/[code]/route.js"]: nextReferralRedirectRouteTemplate(),
     [flags.page || "app/partner/page.jsx"]: nextReferralPageTemplate(),
+    ...leadTrackingFiles({ authSnippet: nextReferralAuthSnippet(auth),
+      customerTable: flags.customerTable, customerIdColumn: flags.customerIdColumn,
+      redirectRoute: flags.redirectRoute }),
   };
 
   if (flags.json) {
@@ -2530,7 +2555,7 @@ async function referralCommand(subcommand, flags = {}) {
     console.log(`Program metadata referralBaseUrl already set (${runtime.referralBaseUrl}); left unchanged. Pass --origin <url> to replace it.`);
   }
   for (const warning of runtime.warnings) console.log(`Warning: ${warning}`);
-  console.log("Next: npx @boomin/cli doctor   (referral_readiness should now pass)");
+  console.log("Next: complete boomin/LEAD_SETUP.md (database, auth, capture and delivery job), then run npx @boomin/cli doctor.");
 }
 
 async function skillCommand(subcommand, flags = {}) {
@@ -2855,37 +2880,6 @@ export async function GET(request) {
     totals: standing.totals,
     requiredChannels: standing.requiredChannels || [],
   });
-}
-`;
-}
-
-function nextReferralRedirectRouteTemplate() {
-  return `import { recordReferralClick } from "@boomin/server";
-
-export async function GET(request, { params }) {
-  const routeParams = await params;
-  const code = routeParams.code;
-  try {
-    await recordReferralClick({
-      publicKey: process.env.BOOMIN_CONNECT_PUBLIC_KEY,
-      programId: process.env.BOOMIN_CONNECT_PROGRAM_ID,
-      issuer: process.env.BOOMIN_HANDOFF_ISSUER || "your-app.com",
-      signingSecret: process.env.BOOMIN_HANDOFF_SIGNING_SECRET,
-      entityRef: code,
-      eventId: \`link_click:\${code}:\${crypto.randomUUID()}\`,
-      metadata: {
-        sourceUrl: request.url,
-        userAgent: request.headers.get("user-agent"),
-        referrer: request.headers.get("referer"),
-      },
-    });
-  } catch (error) {
-    console.warn("Boomin referral click tracking failed", error);
-  }
-
-  const destination = new URL(process.env.BOOMIN_REFERRAL_DESTINATION_URL || "/", request.url);
-  destination.searchParams.set("ref", code);
-  return Response.redirect(destination.toString(), 302);
 }
 `;
 }

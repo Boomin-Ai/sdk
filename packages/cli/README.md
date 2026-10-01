@@ -87,3 +87,19 @@ Three behaviours worth knowing before you put these in cron:
 `skill install` installs the Boomin referral installer skill for Claude Code and Codex, then asks you to restart the agent so the skill metadata is loaded.
 
 Hosted MCP is the supported path. `mcp install` wires it into Claude Code; there is no separate local stdio package to install.
+
+## Durable lead tracking (0.9.0)
+
+`referral init` uses the SDK's shared lead generator. It adds PostgreSQL
+new-account attribution, browser first-touch capture, authenticated signup,
+and protected retry delivery alongside join/status routes. Preview first:
+
+```sh
+npx @boomin/cli referral init --auth custom --customer-table auth.users --customer-id-column id --json
+```
+
+Choose the actual auth table and verified session ID. Use `--write` after
+review; existing files require `--yes`. Complete `boomin/LEAD_SETUP.md` to wire
+DB/auth, apply the migration, mount landing and OTP/OAuth capture, schedule
+retries and verify end-to-end credit. Doctor reports file checks separately
+from runtime checks it cannot prove. See the SDK's lead-tracking guide.

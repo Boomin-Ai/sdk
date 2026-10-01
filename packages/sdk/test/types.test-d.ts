@@ -191,3 +191,31 @@ async function exercise(): Promise<void> {
 }
 
 void exercise;
+
+import { createAttribution } from "../src/attribution";
+import { createLeadTracker } from "../src/leads";
+import { createPostgresLeadStore, leadTrackingMigration } from "../src/leads/postgres";
+import { createLeadSignupHandler, createReferralRedirectHandler } from "../src/leads/next";
+import { leadTrackingFiles } from "../src/leads/scaffold";
+
+async function exerciseLeads() {
+  const attribution = createAttribution({ windowDays: 30 });
+  const code: string | undefined = attribution.capture()?.referralCode;
+  const store = createPostgresLeadStore({ query: async (_sql, _params) => ({ rows: [] }) });
+  const tracker = createLeadTracker({ store, issuer: "brand.test", programs: [
+    { key: "main", publicKey: "pk_main", signingSecret: "server-secret" },
+  ] });
+  await tracker.recordSignup({ customerId: "user", referralCode: code });
+  await store.openSignup({ customerId: "user", createdAt: new Date() });
+  await tracker.recordQualifiedLead({ customerId: "user", eventId: "qualified:user:v1", programKey: "main" });
+  await tracker.deliver({ limit: 25 });
+  createLeadSignupHandler({ tracker, allowedOrigins: ["https://brand.test"], getCurrentCustomer: async () => ({ customerId: "user" }) });
+  createReferralRedirectHandler({ tracker, destinationUrl: "https://brand.test" });
+  leadTrackingMigration({ customerTable: "auth.users" });
+  leadTrackingFiles({ customerTable: "auth.users" });
+  // @ts-expect-error customerId must come from the verified server session
+  await tracker.recordSignup({ referralCode: "alice" });
+  // @ts-expect-error stable qualification event ID is mandatory
+  await tracker.recordQualifiedLead({ customerId: "user", programKey: "main" });
+}
+void exerciseLeads;

@@ -1,7 +1,7 @@
 {
   "name": "@boomin/sdk",
-  "version": "1.0.0-beta.7",
-  "description": "Boomin platform SDK — programmable distribution infrastructure (programs, relationships, enrollments, distributions, deployments, performance, payouts).",
+  "version": "1.0.0-beta.8",
+  "description": "Boomin platform SDK \u2014 programmable distribution infrastructure (programs, relationships, enrollments, distributions, deployments, performance, payouts).",
   "type": "module",
   "repository": {
     "type": "git",
@@ -25,11 +25,37 @@
       "types": "./src/errors.d.ts",
       "import": "./src/errors.js",
       "default": "./src/errors.js"
+    },
+    "./attribution": {
+      "types": "./src/attribution.d.ts",
+      "import": "./src/attribution.js",
+      "default": "./src/attribution.js"
+    },
+    "./leads": {
+      "types": "./src/leads.d.ts",
+      "import": "./src/leads.js",
+      "default": "./src/leads.js"
+    },
+    "./leads/postgres": {
+      "types": "./src/leads/postgres.d.ts",
+      "import": "./src/leads/postgres.js",
+      "default": "./src/leads/postgres.js"
+    },
+    "./leads/next": {
+      "types": "./src/leads/next.d.ts",
+      "import": "./src/leads/next.js",
+      "default": "./src/leads/next.js"
+    },
+    "./leads/scaffold": {
+      "types": "./src/leads/scaffold.d.ts",
+      "import": "./src/leads/scaffold.js",
+      "default": "./src/leads/scaffold.js"
     }
   },
   "files": [
     "src",
-    "README.md"
+    "README.md",
+    "docs"
   ],
   "engines": {
     "node": ">=18"
@@ -38,13 +64,14 @@
     "access": "public"
   },
   "scripts": {
-    "build": "node --check src/index.js && node --check src/core.js && node --check src/casing.js && node --check src/errors.js && node --check src/resources.js && node --check src/webhooks.js",
+    "build": "node --check src/index.js && node --check src/core.js && node --check src/casing.js && node --check src/errors.js && node --check src/resources.js && node --check src/webhooks.js && node --check src/attribution.js && node --check src/leads.js && node --check src/leads/postgres.js && node --check src/leads/next.js && node --check src/leads/scaffold.js",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test 'test/*.test.js'",
     "pack:dry": "npm pack --dry-run"
   },
   "devDependencies": {
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "@electric-sql/pglite": "^0.3.14"
   },
   "keywords": [
     "boomin",
@@ -57,5 +84,8 @@
     "sdk"
   ],
   "author": "Boomin",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@boomin/server": "^0.3.0"
+  }
 }
