@@ -103,3 +103,9 @@ review; existing files require `--yes`. Complete `boomin/LEAD_SETUP.md` to wire
 DB/auth, apply the migration, mount landing and OTP/OAuth capture, schedule
 retries and verify end-to-end credit. Doctor reports file checks separately
 from runtime checks it cannot prove. See the SDK's lead-tracking guide.
+
+### Workspaces and brands
+
+`boomin workspace create --name "Studio" --brand-name "Studio Live" --json` creates an organization and its default brand. Use `boomin workspace list --json` to list accessible organizations. To add a brand to an existing organization, use `boomin brand create --org-id <id> --name "Guest Studio" --json`. Use `boomin brand list --json` to list accessible brands. Creation uses your account's existing permissions and quotas. A successful create returns server-generated IDs. Store these IDs before retrying provisioning.
+
+Set `BOOMIN_CONFIG_DIR` to a separate private directory for each operator or guest login. Each process reads its own config. An explicit `BOOMIN_AUTH_TOKEN` takes precedence.

@@ -14,7 +14,7 @@ const DEFAULT_APP_API_BASE = "https://api.boomin.ai/v1/app";
 const DEFAULT_PLATFORM_API_BASE = "https://api.boomin.ai/v1/platform";
 const DEFAULT_CONNECT_API_BASE = "https://api.boomin.ai/v1/connect";
 const DEFAULT_WEB_BASE = "https://boomin.ai";
-const CONFIG_DIR = path.join(os.homedir(), ".boomin");
+const CONFIG_DIR = process.env.BOOMIN_CONFIG_DIR || path.join(os.homedir(), ".boomin");
 const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
 const ENV_KEYS = ["VITE_BOOMIN_PUBLIC_KEY", "VITE_BOOMIN_PROGRAM_ID", "VITE_BOOMIN_API_BASE"];
 const BOOMIN_SKILL_NAME = "boomin-referral-installer";
@@ -421,6 +421,12 @@ function apiRootFromAppBase(value) {
 
 function printHelp(topic = []) {
   const [first, second] = topic;
+  if (first === "workspace" || first === "brand") {
+    console.log(`boomin workspace list | create --name <organization> [--brand-name <default brand>]
+boomin brand list | create --org-id <id> --name <brand>
+Use --json for structured output and BOOMIN_CONFIG_DIR for a separate login profile.`);
+    return;
+  }
   if (first === "doctor") {
     console.log(`Boomin CLI - doctor
 
@@ -860,6 +866,8 @@ Usage:
   npx @boomin/cli init [--yes] [--dry-run] [--list]
   npx @boomin/cli login [--no-open]
   npx @boomin/cli doctor [--json]
+  npx @boomin/cli workspace list | create --name <organization> [--brand-name <default brand>]
+  npx @boomin/cli brand list | create --org-id <id> --name <brand>
   npx @boomin/cli status [--json]
   npx @boomin/cli logout
   npx @boomin/cli scopes [--json]
@@ -1085,6 +1093,27 @@ async function promptChoice(label, items, render, rl) {
   const index = Number(answer.trim()) - 1;
   if (!Number.isInteger(index) || index < 0 || index >= items.length) throw new Error("Invalid selection.");
   return items[index];
+}
+
+async function manageWorkspaceResource(resource, flags) {
+  const [action] = flags._;
+  if (flags._.length !== 1 || !["list", "create"].includes(action)) {
+    throw new Error(`Use boomin ${resource} list or create.`);
+  }
+  const workspace = resource === "workspace";
+  let body;
+  if (action === "create") {
+    const name = typeof flags.name === "string" && flags.name.trim();
+    if (!name) throw new Error("--name is required.");
+    if (!workspace && !flags.orgId) throw new Error("--org-id is required.");
+    body = workspace ? { name, brandName: flags.brandName } : { name, orgId: flags.orgId };
+  }
+  const { token } = await ensureLogin(flags);
+  const result = await request(appApiBase(flags), workspace ? "/orgs" : "/brands", {
+    token, method: body ? "POST" : "GET", body,
+  });
+  if (flags.json) console.log(JSON.stringify(result));
+  else console.dir(result, { depth: null });
 }
 
 async function selectOrg(apiBase, token, flags, rl) {
@@ -3033,6 +3062,7 @@ async function main() {
   }
 
   if (command === "login") await login(flags);
+  else if (command === "workspace" || command === "brand") await manageWorkspaceResource(command, flags);
   else if (command === "init") await init(flags);
   else if (command === "doctor") await doctor(flags);
   else if (command === "status") await status(flags);
